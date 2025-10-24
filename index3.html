@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Billiard Balls</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        body {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            background: #000;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Base resolution (720p max)
+        const BASE_WIDTH = 1280;
+        const BASE_HEIGHT = 720;
+        
+        // Render canvas 50% larger
+        const RENDER_SCALE = 1.5;
+        canvas.width = BASE_WIDTH * RENDER_SCALE;
+        canvas.height = BASE_HEIGHT * RENDER_SCALE;
+        
+        // Scale canvas to fit fullscreen while maintaining aspect ratio
+        function resizeCanvas() {
+            const windowRatio = window.innerWidth / window.innerHeight;
+            const canvasRatio = BASE_WIDTH / BASE_HEIGHT;
+            
+            if (windowRatio > canvasRatio) {
+                canvas.style.height = '100vh';
+                canvas.style.width = (100 * canvasRatio * window.innerHeight / window.innerWidth) + 'vw';
+            } else {
+                canvas.style.width = '100vw';
+                canvas.style.height = (100 / canvasRatio * window.innerWidth / window.innerHeight) + 'vh';
+            }
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Physics constants
+        const GRAVITY_STRENGTH = 0.02 * RENDER_SCALE;
+        const CENTER_X = canvas.width / 2;
+        const CENTER_Y = canvas.height / 2;
+        const CENTER_Z = 50; // Middle of Z space
+        const CENTER_MASS = 500000; // Massive central gravity well
+        const FRICTION = 0.995;
+        const BOUNCE_DAMPING = 0.7;
+        
+        // Ball colors
+        const COLORS = [
+            '#FFD700', '#FF4500', '#4169E1', '#32CD32', '#FF1493',
+            '#00CED1', '#FF8C00', '#9370DB', '#FF6347', '#20B2AA',
+            '#FFB6C1', '#FFA500', '#7FFF00', '#DC143C', '#00BFFF'
+        ];
+        
+        // Cache for pre-rendered ball images
+        const ballImageCache = new Map();
+        
+        function createBallImage(radius, color) {
+            const cacheKey = `${radius}-${color}`;
+            
+            if (ballImageCache.has(cacheKey)) {
+                return ballImageCache.get(cacheKey);
+            }
+            
+            const size = radius * 2 + 4;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            const centerX = size / 2;
+            const centerY = size / 2;
+            
+            // Draw ball
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            
+            // Add shine effect
+            ctx.beginPath();
+            ctx.arc(centerX - radius * 0.3, centerY - radius * 0.3, radius * 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.fill();
+            
+            // Add outline
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ballImageCache.set(cacheKey, canvas);
+            return canvas;
+        }
+        
+        class Ball {
+            constructor(x, y, z, radius, color, isPlanet = false) {
+                this.x = x;
+                this.y = y;
+                this.z = z || (Math.random() * 100); // Z-depth for 3D effect (0-100)
+                this.radius = radius;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 5 * RENDER_SCALE;
+                this.vy = (Math.random() - 0.5) * 5 * RENDER_SCALE;
+                this.vz = (Math.random() - 0.5) * 2; // Z velocity
+                this.mass = radius * radius * radius; // Mass proportional to volume (3D)
+                this.round = 0; // Track which round this ball was created
+                this.baseRadius = radius; // Store original radius
+                this.baseColor = color;
+                this.image = null; // Will be created based on current depth
+                this.isPlanet = isPlanet; // Planets don't move, only attract
+                this.orbiting = null; // Reference to planet if this is a moon
+            }
+            
+            getDepthScale() {
+                // Scale from 0.3 to 1.7 based on z-depth
+                return 0.3 + (this.z / 100) * 1.4;
+            }
+            
+            getScaledRadius() {
+                return this.baseRadius * this.getDepthScale();
+            }
+            
+            updateImage() {
+                const scaledRadius = this.getScaledRadius();
+                this.radius = scaledRadius;
+                this.image = createBallImage(Math.round(scaledRadius), this.baseColor);
+            }
+            
+            update() {
+                // Planets don't move
+                if (this.isPlanet) {
+                    return;
+                }
+                
+                // Apply gravity from central point (center of screen)
+                const dxCenter = CENTER_X - this.x;
+                const dyCenter = CENTER_Y - this.y;
+                const dzCenter = CENTER_Z - this.z;
+                const distCenterSquared = dxCenter * dxCenter + dyCenter * dyCenter + dzCenter * dzCenter;
+                const distCenter = Math.sqrt(distCenterSquared);
+                
+                if (distCenter > 1) {
+                    const centerForce = (GRAVITY_STRENGTH * this.mass * CENTER_MASS) / (distCenterSquared + 100);
+                    this.vx += (dxCenter / distCenter) * centerForce / this.mass;
+                    this.vy += (dyCenter / distCenter) * centerForce / this.mass;
+                    this.vz += (dzCenter / distCenter) * centerForce / this.mass;
+                }
+                
+                // Apply 3D gravitational attraction to all other balls
+                balls.forEach(other => {
+                    if (other === this) return;
+                    
+                    const dx = other.x - this.x;
+                    const dy = other.y - this.y;
+                    const dz = other.z - this.z;
+                    const distSquared = dx * dx + dy * dy + dz * dz;
+                    const dist = Math.sqrt(distSquared);
+                    
+                    if (dist > 1) {
+                        // Newton's law of gravitation: F = G * m1 * m2 / r^2
+                        const force = (GRAVITY_STRENGTH * this.mass * other.mass) / (distSquared + 100);
+                        const fx = (dx / dist) * force / this.mass;
+                        const fy = (dy / dist) * force / this.mass;
+                        const fz = (dz / dist) * force / this.mass;
+                        
+                        this.vx += fx;
+                        this.vy += fy;
+                        this.vz += fz;
+                    }
+                });
+                
+                // Apply friction
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                this.vz *= FRICTION;
+                
+                // Update image if depth changed significantly
+                const newRadius = this.getScaledRadius();
+                if (Math.abs(newRadius - this.radius) > 1) {
+                    this.updateImage();
+                }
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                this.z += this.vz;
+                
+                // Bounce off walls (3D boundaries)
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx = Math.abs(this.vx) * BOUNCE_DAMPING;
+                } else if (this.x + this.radius > canvas.width) {
+                    this.x = canvas.width - this.radius;
+                    this.vx = -Math.abs(this.vx) * BOUNCE_DAMPING;
+                }
+                
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy = Math.abs(this.vy) * BOUNCE_DAMPING;
+                } else if (this.y + this.radius > canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    this.vy = -Math.abs(this.vy) * BOUNCE_DAMPING;
+                }
+                
+                if (this.z < 0) {
+                    this.z = 0;
+                    this.vz = Math.abs(this.vz) * BOUNCE_DAMPING;
+                } else if (this.z > 100) {
+                    this.z = 100;
+                    this.vz = -Math.abs(this.vz) * BOUNCE_DAMPING;
+                }
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                
+                // Add shine effect
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.fill();
+                
+                // Add outline
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        
+        let balls = [];
+        let currentRound = 0;
+        let lastSpawnTime = 0;
+        let nextSpawnDelay = getRandomSpawnDelay();
+        let kaleidoscopeShards = 3 + Math.floor(Math.random() * 11); // 3-13 shards
+        
+        function getRandomSpawnDelay() {
+            return (3 + Math.random() * 5) * 1000; // 3-8 seconds in milliseconds
+        }
+        
+        function getRandomBallCount() {
+            return Math.floor(3 + Math.random() * 8); // 3-10 balls
+        }
+        
+        function createBall(round) {
+            const isPlanet = Math.random() < 0.15; // 15% chance to be a planet
+            const radius = isPlanet ? 
+                (40 + Math.random() * 40) * RENDER_SCALE : // Larger planets
+                (15 + Math.random() * 25) * RENDER_SCALE;  // Smaller moons
+            
+            const x = radius * 2 + Math.random() * (canvas.width - radius * 4);
+            const y = radius * 2 + Math.random() * (canvas.height - radius * 4);
+            const z = 20 + Math.random() * 60; // Mid-range Z
+            const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+            const ball = new Ball(x, y, z, radius, color, isPlanet);
+            ball.round = round;
+            ball.updateImage(); // Create initial image
+            return ball;
+        }
+        
+        // Initialize with 30 balls
+        for (let i = 0; i < 30; i++) {
+            balls.push(createBall(0));
+        }
+        
+        function checkCollision(ball1, ball2) {
+            const dx = ball2.x - ball1.x;
+            const dy = ball2.y - ball1.y;
+            const dz = ball2.z - ball1.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            
+            const combinedRadius = ball1.getScaledRadius() + ball2.getScaledRadius();
+            
+            if (distance < combinedRadius) {
+                // Don't collide if either is a planet
+                if (ball1.isPlanet || ball2.isPlanet) return;
+                
+                // 3D Collision detected
+                const angle = Math.atan2(dy, dx);
+                const angleZ = Math.atan2(dz, Math.sqrt(dx * dx + dy * dy));
+                
+                // Calculate relative velocity
+                const vRelX = ball1.vx - ball2.vx;
+                const vRelY = ball1.vy - ball2.vy;
+                const vRelZ = ball1.vz - ball2.vz;
+                
+                // Calculate impulse
+                const nx = dx / distance;
+                const ny = dy / distance;
+                const nz = dz / distance;
+                
+                const vRel = vRelX * nx + vRelY * ny + vRelZ * nz;
+                
+                if (vRel > 0) return; // Moving apart
+                
+                const impulse = (2 * vRel) / (1/ball1.mass + 1/ball2.mass);
+                
+                ball1.vx -= impulse * nx / ball1.mass;
+                ball1.vy -= impulse * ny / ball1.mass;
+                ball1.vz -= impulse * nz / ball1.mass;
+                ball2.vx += impulse * nx / ball2.mass;
+                ball2.vy += impulse * ny / ball2.mass;
+                ball2.vz += impulse * nz / ball2.mass;
+                
+                // Separate balls to prevent overlap
+                const overlap = combinedRadius - distance;
+                const separateX = (overlap / 2) * nx;
+                const separateY = (overlap / 2) * ny;
+                const separateZ = (overlap / 2) * nz;
+                
+                ball1.x -= separateX;
+                ball1.y -= separateY;
+                ball1.z -= separateZ;
+                ball2.x += separateX;
+                ball2.y += separateY;
+                ball2.z += separateZ;
+            }
+        }
+        
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let fps = 60;
+        const TARGET_FPS = 60;
+        const FRAME_DURATION = 1000 / TARGET_FPS;
+        let lastFrameTime = 0;
+        
+        // Cache the temp canvas for performance
+        let tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        let tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        
+        // Create separate canvases for each RGB channel
+        let channelCanvases = {
+            r: document.createElement('canvas'),
+            g: document.createElement('canvas'),
+            b: document.createElement('canvas')
+        };
+        channelCanvases.r.width = channelCanvases.g.width = channelCanvases.b.width = canvas.width;
+        channelCanvases.r.height = channelCanvases.g.height = channelCanvases.b.height = canvas.height;
+        
+        function drawKaleidoscope() {
+            // Draw all balls to the temp canvas
+            tempCtx.fillStyle = '#000';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // Sort balls by z-depth (back to front)
+            const sortedBalls = [...balls].sort((a, b) => a.z - b.z);
+            
+            for (let ball of sortedBalls) {
+                const halfSize = ball.radius + 2;
+                const depth = ball.getDepthScale();
+                
+                // Apply opacity based on depth
+                tempCtx.globalAlpha = 0.3 + (depth * 0.7);
+                tempCtx.drawImage(ball.image, ball.x - halfSize, ball.y - halfSize);
+            }
+            
+            tempCtx.globalAlpha = 1.0;
+            
+            // Extract RGB channels from the temp canvas
+            const extractChannel = (channelIndex) => {
+                const channelCanvas = channelIndex === 0 ? channelCanvases.r : 
+                                     channelIndex === 1 ? channelCanvases.g : channelCanvases.b;
+                const channelCtx = channelCanvas.getContext('2d');
+                channelCtx.clearRect(0, 0, channelCanvas.width, channelCanvas.height);
+                channelCtx.drawImage(tempCanvas, 0, 0);
+                
+                // Apply filter to extract specific channel
+                if (channelIndex === 0) {
+                    channelCtx.globalCompositeOperation = 'multiply';
+                    channelCtx.fillStyle = '#ff0000';
+                    channelCtx.fillRect(0, 0, channelCanvas.width, channelCanvas.height);
+                } else if (channelIndex === 1) {
+                    channelCtx.globalCompositeOperation = 'multiply';
+                    channelCtx.fillStyle = '#00ff00';
+                    channelCtx.fillRect(0, 0, channelCanvas.width, channelCanvas.height);
+                } else {
+                    channelCtx.globalCompositeOperation = 'multiply';
+                    channelCtx.fillStyle = '#0000ff';
+                    channelCtx.fillRect(0, 0, channelCanvas.width, channelCanvas.height);
+                }
+                channelCtx.globalCompositeOperation = 'source-over';
+                
+                return channelCanvas;
+            };
+            
+            // Clear main canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw kaleidoscope shards with RGB channel from previous shard
+            ctx.save();
+            ctx.translate(CENTER_X, CENTER_Y);
+            
+            const angleStep = (Math.PI * 2) / kaleidoscopeShards;
+            
+            for (let i = 0; i < kaleidoscopeShards; i++) {
+                ctx.save();
+                ctx.rotate(angleStep * i);
+                
+                // Create a triangular clipping region for each shard
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(canvas.width, 0);
+                ctx.lineTo(canvas.width * Math.cos(angleStep), canvas.width * Math.sin(angleStep));
+                ctx.closePath();
+                ctx.clip();
+                
+                // Determine which channel to use from previous shard
+                const prevChannel = (i - 1 + kaleidoscopeShards) % 3; // 0=red, 1=green, 2=blue
+                const channelSource = extractChannel(prevChannel);
+                
+                // Draw the original scene first
+                if (i % 2 === 0) {
+                    ctx.drawImage(tempCanvas, -CENTER_X, -CENTER_Y);
+                } else {
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(tempCanvas, -CENTER_X, -CENTER_Y);
+                    ctx.scale(-1, 1); // Reset scale
+                }
+                
+                // Overlay the channel from previous shard
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.5;
+                
+                if (i % 2 === 0) {
+                    ctx.drawImage(channelSource, -CENTER_X, -CENTER_Y);
+                } else {
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(channelSource, -CENTER_X, -CENTER_Y);
+                }
+                
+                ctx.globalAlpha = 1.0;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.restore();
+            }
+            
+            ctx.restore();
+        }
+        
+        function gameLoop(currentTime) {
+            // Cap at 60 FPS
+            if (currentTime - lastFrameTime < FRAME_DURATION) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            lastFrameTime = currentTime;
+            
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Check if it's time to spawn new balls
+            if (currentTime - lastSpawnTime >= nextSpawnDelay) {
+                currentRound++;
+                const ballCount = getRandomBallCount();
+                
+                for (let i = 0; i < ballCount; i++) {
+                    balls.push(createBall(currentRound));
+                }
+                
+                lastSpawnTime = currentTime;
+                nextSpawnDelay = getRandomSpawnDelay();
+                
+                // Explode and remove balls from 5 rounds ago
+                if (currentRound >= 5) {
+                    const oldBalls = balls.filter(ball => ball.round <= currentRound - 5);
+                    const youngBalls = balls.filter(ball => ball.round > currentRound - 5);
+                    
+                    // Make old balls explode and kick younger ones
+                    oldBalls.forEach(oldBall => {
+                        youngBalls.forEach(youngBall => {
+                            const dx = youngBall.x - oldBall.x;
+                            const dy = youngBall.y - oldBall.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (distance > 0) {
+                                // Apply massive explosion force (1000x stronger)
+                                const explosionForce = (oldBall.radius * 20000) / (distance * distance);
+                                const forceX = (dx / distance) * explosionForce * RENDER_SCALE;
+                                const forceY = (dy / distance) * explosionForce * RENDER_SCALE;
+                                
+                                youngBall.vx += forceX;
+                                youngBall.vy += forceY;
+                            }
+                        });
+                    });
+                    
+                    balls = youngBalls;
+                }
+            }
+            
+            // Update and check collisions
+            for (let i = 0; i < balls.length; i++) {
+                balls[i].update();
+                
+                // Check collisions with other balls
+                for (let j = i + 1; j < balls.length; j++) {
+                    checkCollision(balls[i], balls[j]);
+                }
+            }
+            
+            // Draw kaleidoscope with all balls
+            drawKaleidoscope();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the animation
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>

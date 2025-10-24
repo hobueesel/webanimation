@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Physics & Fire Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a1a;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+            background: #000;
+            overflow: hidden;
+        }
+        
+        #canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        // Canvas setup - 720p display, double render size for rotation
+        const displayWidth = 1280;
+        const displayHeight = 720;
+        const renderWidth = displayWidth * 2;
+        const renderHeight = displayHeight * 2;
+        
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+        
+        canvas.width = renderWidth;
+        canvas.height = renderHeight;
+        
+        // Mode management
+        let balls = [];
+        
+        // Kaleidoscope effect
+        let kaleidoscopeShards = Math.floor(Math.random() * 11) + 3; // 3-13 shards
+        let kaleidoscopeEnabled = true;
+        
+        // Performance optimization - reusable canvas
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = renderWidth;
+        tempCanvas.height = renderHeight;
+        const tempCtx = tempCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+        
+        // Physics constants
+        const GRAVITY = 0.5;
+        const DAMPING = 0.85;
+        const FRICTION = 0.99;
+        
+        // Ball class with physics
+        class Ball {
+            constructor(x, y, radius, mass) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 20;
+                this.vy = Math.random() * -20 - 10;
+                this.radius = radius;
+                this.mass = mass;
+                this.hue = Math.random() * 360;
+                this.color = `hsl(${this.hue}, 70%, 60%)`;
+            }
+            
+            updateColor() {
+                this.hue = (this.hue + 0.5) % 360;
+                this.color = `hsl(${this.hue}, 70%, 60%)`;
+            }
+            
+            update() {
+                // Apply gravity
+                this.vy += GRAVITY;
+                
+                // Apply friction
+                this.vx *= FRICTION;
+                
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Boundary collisions
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx *= -DAMPING;
+                }
+                if (this.x + this.radius > renderWidth) {
+                    this.x = renderWidth - this.radius;
+                    this.vx *= -DAMPING;
+                }
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy *= -DAMPING;
+                }
+                if (this.y + this.radius > renderHeight) {
+                    this.y = renderHeight - this.radius;
+                    this.vy *= -DAMPING;
+                    this.vx *= 0.95; // Ground friction
+                }
+            }
+            
+            draw(context) {
+                // Simplified rendering for performance
+                context.fillStyle = this.color;
+                context.beginPath();
+                context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                context.fill();
+            }
+        }
+        
+        // Ball collision detection and resolution
+        function checkCollisions() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const ball1 = balls[i];
+                    const ball2 = balls[j];
+                    
+                    const dx = ball2.x - ball1.x;
+                    const dy = ball2.y - ball1.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = ball1.radius + ball2.radius;
+                    
+                    if (distance < minDist) {
+                        // Collision detected - elastic collision
+                        const angle = Math.atan2(dy, dx);
+                        const sin = Math.sin(angle);
+                        const cos = Math.cos(angle);
+                        
+                        // Rotate velocities
+                        const vx1 = ball1.vx * cos + ball1.vy * sin;
+                        const vy1 = ball1.vy * cos - ball1.vx * sin;
+                        const vx2 = ball2.vx * cos + ball2.vy * sin;
+                        const vy2 = ball2.vy * cos - ball2.vx * sin;
+                        
+                        // Calculate new velocities
+                        const vx1Final = ((ball1.mass - ball2.mass) * vx1 + 2 * ball2.mass * vx2) / (ball1.mass + ball2.mass);
+                        const vx2Final = ((ball2.mass - ball1.mass) * vx2 + 2 * ball1.mass * vx1) / (ball1.mass + ball2.mass);
+                        
+                        // Rotate back
+                        ball1.vx = vx1Final * cos - vy1 * sin;
+                        ball1.vy = vy1 * cos + vx1Final * sin;
+                        ball2.vx = vx2Final * cos - vy2 * sin;
+                        ball2.vy = vy2 * cos + vx2Final * sin;
+                        
+                        // Separate balls
+                        const overlap = minDist - distance;
+                        const separateX = (overlap * dx / distance) / 2;
+                        const separateY = (overlap * dy / distance) / 2;
+                        
+                        ball1.x -= separateX;
+                        ball1.y -= separateY;
+                        ball2.x += separateX;
+                        ball2.y += separateY;
+                    }
+                }
+            }
+        }
+        
+        // Initialize balls
+        function addBalls(count = 15) {
+            for (let i = 0; i < count; i++) {
+                const radius = Math.random() * 40 + 20;
+                const mass = radius * radius; // Mass proportional to area
+                const x = Math.random() * (renderWidth - radius * 2) + radius;
+                const y = Math.random() * 200 + 100; // Start from upper portion
+                
+                balls.push(new Ball(x, y, radius, mass));
+            }
+        }
+        
+        // Throw new balls every random interval
+        let throwCount = 0;
+        function scheduleNextBall() {
+            const delay = (Math.random() * 5000) + 2000; // 2-7 seconds
+            setTimeout(() => {
+                addBalls(5); // Throw 5 balls at once
+                throwCount++;
+                
+                // Every 5 cycles, remove old balls
+                if (throwCount % 5 === 0) {
+                    balls.splice(0, Math.min(5, balls.length));
+                }
+                
+                scheduleNextBall();
+            }, delay);
+        }
+        
+        // Toggle kaleidoscope effect periodically
+        function scheduleKaleidoscopeSwitch() {
+            const delay = (Math.random() * 4000) + 3000; // 3-7 seconds
+            setTimeout(() => {
+                // Always keep kaleidoscope enabled, just change shard count
+                kaleidoscopeShards = Math.floor(Math.random() * 11) + 3; // 3-13 shards
+                scheduleKaleidoscopeSwitch();
+            }, delay);
+        }
+        
+        // Kaleidoscope rendering - optimized
+        function drawWithKaleidoscope(drawFunction) {
+            if (!kaleidoscopeEnabled) {
+                drawFunction();
+                return;
+            }
+            
+            // Draw original scene first
+            drawFunction();
+            
+            // Copy current scene to temp canvas (reusing cached canvas)
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // Clear main canvas
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, renderWidth, renderHeight);
+            
+            // Pre-calculate constants
+            const centerX = renderWidth / 2;
+            const centerY = renderHeight / 2;
+            const angleStep = (Math.PI * 2) / kaleidoscopeShards;
+            
+            // Draw kaleidoscope shards with optimized transforms
+            ctx.globalCompositeOperation = 'lighter'; // Blend mode for performance
+            
+            for (let i = 0; i < kaleidoscopeShards; i++) {
+                ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
+                ctx.translate(centerX, centerY);
+                ctx.rotate(i * angleStep);
+                
+                // Flip every other shard
+                if (i % 2 === 1) {
+                    ctx.scale(-1, 1);
+                }
+                
+                ctx.translate(-centerX, -centerY);
+                ctx.drawImage(tempCanvas, 0, 0);
+            }
+            
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
+            ctx.globalCompositeOperation = 'source-over'; // Reset blend mode
+        }
+        
+        // Animation loop
+        function animate() {
+            drawWithKaleidoscope(() => {
+                // Clear canvas
+                ctx.fillStyle = 'rgba(20, 20, 40, 1)';
+                ctx.fillRect(0, 0, renderWidth, renderHeight);
+                
+                // Update and draw balls
+                for (const ball of balls) {
+                    ball.update();
+                    ball.updateColor();
+                    ball.draw(ctx);
+                }
+                
+                // Check collisions
+                checkCollisions();
+            });
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Initialize and start
+        addBalls(15);
+        animate();
+        scheduleNextBall();
+        scheduleKaleidoscopeSwitch();
+    </script>
+</body>
+</html>

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plasma Effect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Base resolution (720p max)
+        const BASE_WIDTH = 1280;
+        const BASE_HEIGHT = 720;
+        
+        // Calculate actual render resolution based on screen aspect ratio
+        function calculateRenderSize() {
+            const screenRatio = window.innerWidth / window.innerHeight;
+            const baseRatio = BASE_WIDTH / BASE_HEIGHT;
+            
+            let renderWidth, renderHeight;
+            
+            if (screenRatio > baseRatio) {
+                // Screen is wider than base ratio
+                renderHeight = BASE_HEIGHT;
+                renderWidth = Math.floor(BASE_HEIGHT * screenRatio);
+            } else {
+                // Screen is taller or same as base ratio
+                renderWidth = BASE_WIDTH;
+                renderHeight = Math.floor(BASE_WIDTH / screenRatio);
+            }
+            
+            // Downscale for performance (classic plasma look)
+            return {
+                width: Math.floor(renderWidth / 2),
+                height: Math.floor(renderHeight / 2)
+            };
+        }
+        
+        // Set canvas size
+        function resizeCanvas() {
+            const size = calculateRenderSize();
+            canvas.width = size.width;
+            canvas.height = size.height;
+        }
+        
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Plasma effect variables
+        const width = canvas.width;
+        const height = canvas.height;
+        let time = 0;
+        
+        // Scene rotation
+        let currentScene = 'plasma';
+        let sceneTimer = 0;
+        let sceneDuration = 5000 + Math.random() * 10000; // 5-15 seconds
+        
+        function getRandomSceneDuration() {
+            return 5000 + Math.random() * 10000; // 5-15 seconds
+        }
+        
+        // Render plasma at larger size for zoom effect
+        const plasmaScale = 1.5; // Render 1.5x larger
+        const plasmaWidth = Math.floor(width * plasmaScale);
+        const plasmaHeight = Math.floor(height * plasmaScale);
+        const plasmaImageData = ctx.createImageData(plasmaWidth, plasmaHeight);
+        const plasmaData = plasmaImageData.data;
+        
+        // Flame buffer
+        const flameBuffer = new Uint8Array(width * height); // Heat map
+        
+        // Fire palette (oldschool flame colors)
+        const firePalette = new Array(256);
+        for (let i = 0; i < 256; i++) {
+            if (i < 64) {
+                // Black to dark red
+                firePalette[i] = { r: Math.floor(i * 3), g: 0, b: 0 };
+            } else if (i < 128) {
+                // Dark red to red-orange
+                const t = i - 64;
+                firePalette[i] = { r: 192 + t, g: Math.floor(t * 3), b: 0 };
+            } else if (i < 192) {
+                // Red-orange to yellow
+                const t = i - 128;
+                firePalette[i] = { r: 255, g: 192 + t, b: 0 };
+            } else {
+                // Yellow to white
+                const t = i - 192;
+                firePalette[i] = { r: 255, g: 255, b: Math.floor(t * 4) };
+            }
+        }
+        
+        // Color schemes - three-color gradients for more interesting palettes
+        const colorSchemes = [
+            // Deep blues -> cyan -> purple
+            { 
+                colors: [
+                    [10, 20, 120],
+                    [40, 180, 220],
+                    [140, 60, 200]
+                ]
+            },
+            // Purple -> magenta -> orange
+            { 
+                colors: [
+                    [80, 20, 140],
+                    [240, 40, 180],
+                    [255, 140, 60]
+                ]
+            },
+            // Teal -> cyan -> lime
+            { 
+                colors: [
+                    [20, 120, 120],
+                    [60, 220, 255],
+                    [140, 255, 100]
+                ]
+            },
+            // Red -> orange -> yellow
+            { 
+                colors: [
+                    [160, 20, 40],
+                    [255, 120, 40],
+                    [255, 220, 80]
+                ]
+            },
+            // Dark green -> bright green -> yellow-green
+            { 
+                colors: [
+                    [20, 80, 40],
+                    [80, 220, 80],
+                    [180, 255, 100]
+                ]
+            },
+            // Deep pink -> hot pink -> peach
+            { 
+                colors: [
+                    [140, 20, 100],
+                    [255, 80, 180],
+                    [255, 180, 140]
+                ]
+            }
+        ];
+        
+        let currentSchemeIndex = 0;
+        let nextSchemeIndex = 1;
+        let transitionProgress = 0;
+        const TRANSITION_DURATION = 2000; // 2 seconds fade
+        const HOLD_DURATION = 3000; // 3 seconds hold
+        let phaseTimer = 0;
+        let isTransitioning = false;
+        
+        // Generate palette with three-color gradient
+        function generatePalette(scheme) {
+            const palette = new Array(256);
+            const c1 = scheme.colors[0];
+            const c2 = scheme.colors[1];
+            const c3 = scheme.colors[2];
+            
+            for (let i = 0; i < 256; i++) {
+                const t = i / 255;
+                let r, g, b;
+                
+                if (t < 0.5) {
+                    // Blend between color 1 and color 2
+                    const localT = t * 2;
+                    const wave = Math.sin(localT * Math.PI);
+                    r = Math.floor(c1[0] + (c2[0] - c1[0]) * wave);
+                    g = Math.floor(c1[1] + (c2[1] - c1[1]) * wave);
+                    b = Math.floor(c1[2] + (c2[2] - c1[2]) * wave);
+                } else {
+                    // Blend between color 2 and color 3
+                    const localT = (t - 0.5) * 2;
+                    const wave = Math.sin(localT * Math.PI);
+                    r = Math.floor(c2[0] + (c3[0] - c2[0]) * wave);
+                    g = Math.floor(c2[1] + (c3[1] - c2[1]) * wave);
+                    b = Math.floor(c2[2] + (c3[2] - c2[2]) * wave);
+                }
+                
+                palette[i] = { r, g, b };
+            }
+            return palette;
+        }
+        
+        // Lerp between two palettes
+        function lerpPalette(palette1, palette2, t) {
+            const result = new Array(256);
+            for (let i = 0; i < 256; i++) {
+                result[i] = {
+                    r: Math.floor(palette1[i].r + (palette2[i].r - palette1[i].r) * t),
+                    g: Math.floor(palette1[i].g + (palette2[i].g - palette1[i].g) * t),
+                    b: Math.floor(palette1[i].b + (palette2[i].b - palette1[i].b) * t)
+                };
+            }
+            return result;
+        }
+        
+        let currentPalette = generatePalette(colorSchemes[currentSchemeIndex]);
+        let nextPalette = generatePalette(colorSchemes[nextSchemeIndex]);
+        let palette = currentPalette;
+        
+        // Create image data buffers
+        const baseImageData = ctx.createImageData(width, height);
+        const baseData = baseImageData.data;
+        const effectImageData = ctx.createImageData(width, height);
+        const effectData = effectImageData.data;
+        const particleImageData = ctx.createImageData(width, height);
+        const particleData = particleImageData.data;
+        
+        // Off-screen canvas for compositing
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = width;
+        offscreenCanvas.height = height;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+        
+        // ===== BASE RENDERS =====
+        
+        // Plasma calculation with dynamic movement direction
+        function renderPlasma(imageData, time) {
+            const data = imageData.data;
+            const w = plasmaWidth;
+            const h = plasmaHeight;
+            
+            // Sinusoidal direction changes
+            const dirX = Math.sin(time * 0.3) * 2;
+            const dirY = Math.cos(time * 0.2) * 2;
+            const dirDiag = Math.sin(time * 0.15) * 1.5;
+            const dirRadial = Math.cos(time * 0.25) * 1.5;
+            
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const value = Math.sin(x / 16.0 + time * dirX) +
+                                 Math.sin(y / 8.0 + time * dirY) +
+                                 Math.sin((x + y) / 16.0 + time * dirDiag) +
+                                 Math.sin(Math.sqrt(x * x + y * y) / 8.0 + time * dirRadial);
+                    
+                    const colorIndex = Math.floor(((value + 4) / 8) * 255) & 255;
+                    const color = palette[colorIndex];
+                    
+                    const index = (y * w + x) * 4;
+                    data[index] = color.r;
+                    data[index + 1] = color.g;
+                    data[index + 2] = color.b;
+                    data[index + 3] = 255;
+                }
+            }
+        }
+        
+        // Old-school flame effect
+        function renderFlame(imageData) {
+            const data = imageData.data;
+            
+            // Add bigger heat sources at the bottom
+            for (let x = 0; x < width; x++) {
+                const heatIndex = (height - 1) * width + x;
+                
+                // Create larger heat chunks
+                if (Math.random() > 0.1) { // More frequent heat sources
+                    const intensity = Math.floor(220 + Math.random() * 35);
+                    flameBuffer[heatIndex] = intensity;
+                    
+                    // Add horizontal spread for bigger flames
+                    if (x > 0) flameBuffer[heatIndex - 1] = intensity * 0.8;
+                    if (x < width - 1) flameBuffer[heatIndex + 1] = intensity * 0.8;
+                } else {
+                    flameBuffer[heatIndex] = 0;
+                }
+                
+                // Add some heat sources a few rows up for bigger flames
+                if (y < height - 3 && Math.random() > 0.7) {
+                    const upperIndex = (height - 3) * width + x;
+                    flameBuffer[upperIndex] = Math.floor(150 + Math.random() * 50);
+                }
+            }
+            
+            // Propagate heat upward with cooling and spreading
+            for (let y = 1; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const destIndex = (y - 1) * width + x;
+                    
+                    // Sample from below with more horizontal spread for bigger flames
+                    let heat = 0;
+                    const spread = 2; // Increased spread
+                    
+                    for (let dx = -spread; dx <= spread; dx++) {
+                        const srcX = x + dx;
+                        if (srcX >= 0 && srcX < width) {
+                            const srcIndex = y * width + srcX;
+                            heat += flameBuffer[srcIndex];
+                        }
+                    }
+                    
+                    heat = heat / (spread * 2 + 1);
+                    
+                    // Less cooling for bigger, taller flames
+                    heat -= Math.random() * 2 + 1;
+                    heat = Math.max(0, Math.min(255, heat));
+                    
+                    flameBuffer[destIndex] = heat;
+                }
+            }
+            
+            // Convert heat map to image with fire palette
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const heatIndex = y * width + x;
+                    const heat = Math.floor(flameBuffer[heatIndex]);
+                    const color = firePalette[heat];
+                    
+                    const pixelIndex = (y * width + x) * 4;
+                    data[pixelIndex] = color.r;
+                    data[pixelIndex + 1] = color.g;
+                    data[pixelIndex + 2] = color.b;
+                    data[pixelIndex + 3] = 255;
+                }
+            }
+        }
+        
+        // ===== EFFECTS LAYER =====
+        
+        // Kaleidoscope state
+        let kaleidoscopeSegments = 6;
+        let kaleidoscopeTimer = 0;
+        let kaleidoscopeChangeInterval = 3000; // Will be randomized
+        
+        // Weighted random number generator (favors lower numbers)
+        function getWeightedRandomSegments() {
+            // Use exponential distribution to favor lower numbers
+            const random = Math.random();
+            const weighted = Math.pow(random, 2.5); // Power > 1 favors lower values
+            return Math.floor(3 + weighted * 21); // Range 3-23
+        }
+        
+        function getRandomInterval() {
+            return 1000 + Math.random() * 4000; // 1-5 seconds
+        }
+        
+        // Kaleidoscope effect
+        function applyKaleidoscope(sourceData, destData, time, sourceWidth, sourceHeight) {
+            const centerX = sourceWidth / 2;
+            const centerY = sourceHeight / 2;
+            const segments = kaleidoscopeSegments;
+            const rotation = time * 0.2; // Slow rotation
+            
+            // Offset for centering the zoomed view (only for plasma)
+            const offsetX = sourceWidth > width ? (sourceWidth - width) / 2 : 0;
+            const offsetY = sourceHeight > height ? (sourceHeight - height) / 2 : 0;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    // Map to source coordinates
+                    const sourceX = x + offsetX;
+                    const sourceY = y + offsetY;
+                    
+                    // Calculate polar coordinates
+                    let dx = sourceX - centerX;
+                    let dy = sourceY - centerY;
+                    let angle = Math.atan2(dy, dx) + rotation;
+                    let radius = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Mirror angle within one segment
+                    angle = angle % (2 * Math.PI / segments);
+                    if (angle < 0) angle += 2 * Math.PI / segments;
+                    
+                    // Mirror within segment for kaleidoscope effect
+                    const segmentAngle = Math.PI / segments;
+                    if (angle > segmentAngle) {
+                        angle = 2 * segmentAngle - angle;
+                    }
+                    
+                    // Convert back to cartesian
+                    const finalSourceX = Math.floor(centerX + radius * Math.cos(angle));
+                    const finalSourceY = Math.floor(centerY + radius * Math.sin(angle));
+                    
+                    // Bounds check
+                    if (finalSourceX >= 0 && finalSourceX < sourceWidth && finalSourceY >= 0 && finalSourceY < sourceHeight) {
+                        const sourceIndex = (finalSourceY * sourceWidth + finalSourceX) * 4;
+                        const destIndex = (y * width + x) * 4;
+                        
+                        destData[destIndex] = sourceData[sourceIndex];
+                        destData[destIndex + 1] = sourceData[sourceIndex + 1];
+                        destData[destIndex + 2] = sourceData[sourceIndex + 2];
+                        destData[destIndex + 3] = sourceData[sourceIndex + 3];
+                    }
+                }
+            }
+        }
+        
+        // ===== PARTICLE SYSTEM =====
+        
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+            
+            reset() {
+                // Orbital parameters
+                this.angle = Math.random() * Math.PI * 2;
+                this.orbitRadius = 50 + Math.random() * 200;
+                this.orbitSpeed = (0.5 + Math.random() * 1.5) / this.orbitRadius * 50; // Closer = faster
+                
+                // Planet position (gravitational center)
+                this.planetX = width / 2 + (Math.random() - 0.5) * width * 0.3;
+                this.planetY = height / 2 + (Math.random() - 0.5) * height * 0.3;
+                
+                // Particle properties
+                this.life = 0;
+                this.maxLife = 2 + Math.random() * 3; // 2-5 seconds
+                this.maxSize = 3 + Math.random() * 8;
+                this.isWhite = Math.random() > 0.5;
+                this.popStartLife = this.maxLife * 0.8; // Start popping at 80% life
+            }
+            
+            update(deltaTime) {
+                this.life += deltaTime;
+                
+                if (this.life >= this.maxLife) {
+                    this.reset();
+                    return;
+                }
+                
+                // Orbital movement
+                this.angle += this.orbitSpeed * deltaTime;
+                
+                // Apply slight gravitational wobble
+                const wobble = Math.sin(this.life * 2) * 0.1;
+                this.orbitRadius += wobble;
+            }
+            
+            draw(imageData) {
+                const data = imageData.data;
+                
+                // Calculate position
+                const x = Math.floor(this.planetX + Math.cos(this.angle) * this.orbitRadius);
+                const y = Math.floor(this.planetY + Math.sin(this.angle) * this.orbitRadius);
+                
+                // Calculate size with growth and pop
+                let size;
+                const lifeRatio = this.life / this.maxLife;
+                
+                if (this.life < this.popStartLife) {
+                    // Growing phase
+                    size = this.maxSize * (this.life / this.popStartLife);
+                } else {
+                    // Popping phase - inside out effect
+                    const popProgress = (this.life - this.popStartLife) / (this.maxLife - this.popStartLife);
+                    size = this.maxSize * (1 + popProgress * 2); // Grows bigger before pop
+                }
+                
+                // Opacity fade during pop
+                const opacity = this.life < this.popStartLife ? 1 : 1 - ((this.life - this.popStartLife) / (this.maxLife - this.popStartLife));
+                
+                // Color
+                const colorValue = this.isWhite ? 255 : 0;
+                
+                // Draw circle (simple filled circle algorithm)
+                const radius = Math.floor(size);
+                for (let dy = -radius; dy <= radius; dy++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance <= radius) {
+                            const px = x + dx;
+                            const py = y + dy;
+                            
+                            if (px >= 0 && px < width && py >= 0 && py < height) {
+                                const index = (py * width + px) * 4;
+                                
+                                // Inside-out effect during pop
+                                let alpha = opacity;
+                                if (this.life >= this.popStartLife) {
+                                    const distRatio = distance / radius;
+                                    const popProgress = (this.life - this.popStartLife) / (this.maxLife - this.popStartLife);
+                                    // Create ring that expands outward
+                                    if (distRatio > popProgress) {
+                                        alpha *= (1 - distRatio);
+                                    } else {
+                                        alpha *= 0.3;
+                                    }
+                                }
+                                
+                                data[index] = colorValue;
+                                data[index + 1] = colorValue;
+                                data[index + 2] = colorValue;
+                                data[index + 3] = Math.floor(alpha * 255);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Create particle pool
+        const particles = [];
+        const particleCount = 30;
+        for (let i = 0; i < particleCount; i++) {
+            particles.push(new Particle());
+        }
+        
+        function renderParticles(imageData, deltaTime) {
+            const data = imageData.data;
+            
+            // Expand and fade existing trails for spreading effect
+            const tempData = new Uint8ClampedArray(data.length);
+            tempData.set(data);
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const index = (y * width + x) * 4;
+                    
+                    if (tempData[index + 3] > 0) {
+                        // Sample surrounding pixels and average with slight expansion
+                        const neighbors = [
+                            ((y - 1) * width + x) * 4,      // top
+                            ((y + 1) * width + x) * 4,      // bottom
+                            (y * width + (x - 1)) * 4,      // left
+                            (y * width + (x + 1)) * 4,      // right
+                            ((y - 1) * width + (x - 1)) * 4, // top-left
+                            ((y - 1) * width + (x + 1)) * 4, // top-right
+                            ((y + 1) * width + (x - 1)) * 4, // bottom-left
+                            ((y + 1) * width + (x + 1)) * 4  // bottom-right
+                        ];
+                        
+                        let avgR = tempData[index];
+                        let avgG = tempData[index + 1];
+                        let avgB = tempData[index + 2];
+                        let avgA = tempData[index + 3];
+                        let count = 1;
+                        
+                        // Blend with neighbors for expansion
+                        neighbors.forEach(nIndex => {
+                            if (tempData[nIndex + 3] > 0) {
+                                avgR += tempData[nIndex];
+                                avgG += tempData[nIndex + 1];
+                                avgB += tempData[nIndex + 2];
+                                avgA += tempData[nIndex + 3];
+                                count++;
+                            }
+                        });
+                        
+                        if (count > 1) {
+                            data[index] = Math.floor(avgR / count);
+                            data[index + 1] = Math.floor(avgG / count);
+                            data[index + 2] = Math.floor(avgB / count);
+                            data[index + 3] = Math.floor((avgA / count) * 0.92); // Fade out
+                        } else {
+                            data[index + 3] = Math.floor(data[index + 3] * 0.88); // Faster fade if no neighbors
+                        }
+                    }
+                }
+            }
+            
+            // Update and draw all particles
+            particles.forEach(particle => {
+                particle.update(deltaTime);
+                particle.draw(imageData);
+            });
+        }
+        
+        // Animation loop
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let fps = 0;
+        let colorChangeTimer = 0;
+        let lastFrameTime = performance.now();
+        
+        // Active layers configuration
+        const layers = {
+            baseRenders: ['plasma'], // Can add more base renders later
+            effects: ['kaleidoscope'], // Can add more effects later
+            particles: true
+        };
+        
+        // Particle blend modes
+        const blendModes = ['xor', 'multiply', 'screen', 'overlay', 'difference'];
+        let currentBlendMode = 0;
+        let blendModeTimer = 0;
+        let blendModeDuration = 3000 + Math.random() * 4000; // 3-7 seconds
+        
+        function getRandomBlendDuration() {
+            return 3000 + Math.random() * 4000; // 3-7 seconds
+        }
+        
+        function animate(currentTime) {
+            // Calculate FPS and delta time
+            frameCount++;
+            const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
+            lastFrameTime = currentTime;
+            
+            if (currentTime - lastTime >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
+            // Handle color scheme transitions
+            phaseTimer += 16.67; // Approximate frame time at 60fps
+            
+            if (!isTransitioning) {
+                // Holding current color
+                if (phaseTimer >= HOLD_DURATION) {
+                    phaseTimer = 0;
+                    isTransitioning = true;
+                    transitionProgress = 0;
+                    // Prepare next palette
+                    currentSchemeIndex = nextSchemeIndex;
+                    nextSchemeIndex = (nextSchemeIndex + 1) % colorSchemes.length;
+                    currentPalette = generatePalette(colorSchemes[currentSchemeIndex]);
+                    nextPalette = generatePalette(colorSchemes[nextSchemeIndex]);
+                }
+            } else {
+                // Transitioning between colors
+                if (phaseTimer >= TRANSITION_DURATION) {
+                    phaseTimer = 0;
+                    isTransitioning = false;
+                    palette = currentPalette;
+                } else {
+                    transitionProgress = phaseTimer / TRANSITION_DURATION;
+                    // Smooth easing function
+                    const eased = transitionProgress < 0.5 
+                        ? 2 * transitionProgress * transitionProgress 
+                        : 1 - Math.pow(-2 * transitionProgress + 2, 2) / 2;
+                    palette = lerpPalette(currentPalette, nextPalette, eased);
+                }
+            }
+            
+            // Update kaleidoscope segments randomly
+            kaleidoscopeTimer += 16.67;
+            if (kaleidoscopeTimer >= kaleidoscopeChangeInterval) {
+                kaleidoscopeTimer = 0;
+                kaleidoscopeSegments = getWeightedRandomSegments();
+                kaleidoscopeChangeInterval = getRandomInterval();
+            }
+            
+            // Rotate scenes
+            sceneTimer += 16.67;
+            if (sceneTimer >= sceneDuration) {
+                sceneTimer = 0;
+                currentScene = currentScene === 'plasma' ? 'flame' : 'plasma';
+                sceneDuration = getRandomSceneDuration();
+            }
+            
+            // Rotate blend modes
+            blendModeTimer += 16.67;
+            if (blendModeTimer >= blendModeDuration) {
+                blendModeTimer = 0;
+                currentBlendMode = (currentBlendMode + 1) % blendModes.length;
+                blendModeDuration = getRandomBlendDuration();
+            }
+            
+            // LAYER 1: Render base (plasma or flame)
+            if (currentScene === 'plasma') {
+                renderPlasma(plasmaImageData, time);
+                
+                // LAYER 2: Apply kaleidoscope effect on plasma
+                if (layers.effects.includes('kaleidoscope')) {
+                    applyKaleidoscope(plasmaData, effectData, time, plasmaWidth, plasmaHeight);
+                    ctx.putImageData(effectImageData, 0, 0);
+                } else {
+                    ctx.putImageData(baseImageData, 0, 0);
+                }
+            } else {
+                // Flame scene
+                renderFlame(baseImageData);
+                
+                // LAYER 2: Apply kaleidoscope effect on flame
+                if (layers.effects.includes('kaleidoscope')) {
+                    applyKaleidoscope(baseData, effectData, time, width, height);
+                    ctx.putImageData(effectImageData, 0, 0);
+                } else {
+                    ctx.putImageData(baseImageData, 0, 0);
+                }
+            }
+            
+            // LAYER 3: Render and composite particles
+            if (layers.particles) {
+                renderParticles(particleImageData, deltaTime);
+                
+                // Blend particles with current mode
+                const currentData = ctx.getImageData(0, 0, width, height);
+                const current = currentData.data;
+                const mode = blendModes[currentBlendMode];
+                
+                for (let i = 0; i < particleData.length; i += 4) {
+                    const alpha = particleData[i + 3] / 255;
+                    if (alpha > 0) {
+                        const pr = particleData[i];
+                        const pg = particleData[i + 1];
+                        const pb = particleData[i + 2];
+                        const cr = current[i];
+                        const cg = current[i + 1];
+                        const cb = current[i + 2];
+                        
+                        switch(mode) {
+                            case 'xor':
+                                current[i] = cr ^ pr;
+                                current[i + 1] = cg ^ pg;
+                                current[i + 2] = cb ^ pb;
+                                break;
+                            
+                            case 'multiply':
+                                current[i] = Math.floor((cr * pr) / 255);
+                                current[i + 1] = Math.floor((cg * pg) / 255);
+                                current[i + 2] = Math.floor((cb * pb) / 255);
+                                break;
+                            
+                            case 'screen':
+                                current[i] = 255 - Math.floor(((255 - cr) * (255 - pr)) / 255);
+                                current[i + 1] = 255 - Math.floor(((255 - cg) * (255 - pg)) / 255);
+                                current[i + 2] = 255 - Math.floor(((255 - cb) * (255 - pb)) / 255);
+                                break;
+                            
+                            case 'overlay':
+                                const overlayBlend = (c, p) => {
+                                    return c < 128 
+                                        ? Math.floor((2 * c * p) / 255)
+                                        : 255 - Math.floor((2 * (255 - c) * (255 - p)) / 255);
+                                };
+                                current[i] = overlayBlend(cr, pr);
+                                current[i + 1] = overlayBlend(cg, pg);
+                                current[i + 2] = overlayBlend(cb, pb);
+                                break;
+                            
+                            case 'difference':
+                                current[i] = Math.abs(cr - pr);
+                                current[i + 1] = Math.abs(cg - pg);
+                                current[i + 2] = Math.abs(cb - pb);
+                                break;
+                        }
+                    }
+                }
+                
+                ctx.putImageData(currentData, 0, 0);
+            }
+            
+            time += 0.05;
+            requestAnimationFrame(animate);
+        }
+        
+        // Start animation
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
