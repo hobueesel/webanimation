@@ -258,44 +258,17 @@
                 percentile[idx] = (n > 1) ? rank / (n - 1) : 0;
               }
 
-              // draw particles with short trail interpolation from previous render position
+              // draw particles as filled circles (no trail/tails)
               for(let i=0;i<n;i++){
                 const p = this.particles[i];
                 const perc = clamp(percentile[i], 0, 1);
                 // map percentile to wavelength: 0 -> 780nm (red), 1 -> 380nm (violet)
                 const wavelength = 780 - perc * (780 - 380);
 
-                // ensure previous position exists
-                if(p.prevX === undefined){ p.prevX = p.x; p.prevY = p.y; }
-
-                const x0 = p.prevX, y0 = p.prevY, x1 = p.x, y1 = p.y;
-                const dx = x1 - x0, dy = y1 - y0;
-                const dist2 = dx*dx + dy*dy;
-                const lineWidth = Math.max(1, p.r * 2);
-
-                if(dist2 < 0.25){
-                  // almost stationary: draw a filled dot with full alpha
-                  ctx.fillStyle = wavelengthToRGBA(wavelength, 1);
-                  ctx.beginPath();
-                  ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-                  ctx.fill();
-                } else {
-                  // draw gradient line from previous (alpha=0) to current (alpha=1)
-                  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-                  grad.addColorStop(0, wavelengthToRGBA(wavelength, 0));
-                  grad.addColorStop(1, wavelengthToRGBA(wavelength, 1));
-                  ctx.strokeStyle = grad;
-                  ctx.lineWidth = lineWidth;
-                  ctx.lineCap = 'round';
-                  ctx.beginPath();
-                  ctx.moveTo(x0, y0);
-                  ctx.lineTo(x1, y1);
-                  ctx.stroke();
-                }
-
-                // store current as previous for next frame
-                p.prevX = p.x;
-                p.prevY = p.y;
+                ctx.fillStyle = wavelengthToRGBA(wavelength, 1);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+                ctx.fill();
               }
 
               // optionally draw black-holes for debugging
