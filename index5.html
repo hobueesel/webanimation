@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!doctype html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Index5 - Hex particles with invisible black-holes</title>
+    <style>
+      html,body{height:100%;margin:0;background:#000}
+      /* Logical canvas is 1280x720 (720p). We stretch it to fill the viewport. */
+      canvas{display:block;width:100vw;height:100vh;touch-action:none}
+      /* optional: ensure no selection on double-click */
+      body,canvas{user-select:none;-webkit-user-select:none}
+      /* Small UI in corner for debug toggle */
+      #debugToggle{position:fixed;left:8px;top:8px;color:#fff;font-family:sans-serif;opacity:0.9;z-index:100}
+    </style>
+  </head>
+  <body>
+    <div id="debugToggle">
+      <label style="cursor:pointer"><input id="dbg" type="checkbox"> show black-holes</label>
+    </div>
+    <canvas id="c"></canvas>
+    <script>
+      (function(){
+        // Logical render resolution
+        const LOGICAL_W = 1280;
+        const LOGICAL_H = 720;
+
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        // keep canvas drawing buffer at logical size
+        canvas.width = LOGICAL_W;
+        canvas.height = LOGICAL_H;
+
+        // scaling: we'll compute scale to map logical coordinates to CSS stretched size
+        function updateCanvasSize(){
+          canvas.style.width = window.innerWidth + 'px';
+          canvas.style.height = window.innerHeight + 'px';
+        }
+        window.addEventListener('resize', updateCanvasSize);
+        updateCanvasSize();
+
+        // Simple utilities
+        function rnd(min,max){ return Math.random()*(max-min)+min }
+        function clamp(v,a,b){ return Math.max(a, Math.min(b, v)) }
+
+        // Scene picker (randomly pick from available scenes)
+        const scenes = [];
+
+        // Scene: hex grid of white particles, black background. Particles mass=1.
+        scenes.push(function createHexScene(){
+          const particles = [];
+          const mass = 1;
+          const spacing = 20; // hex spacing; tweak for performance
+          const radius = 1.2; // draw radius of particles
+
+          // Build hex grid across LOGICAL_W x LOGICAL_H
+          const h = spacing * Math.sqrt(3)/2;
+          let row = 0;
+          for(let y = h/2; y < LOGICAL_H + h; y += h){
+            const offset = (row % 2) ? spacing/2 : 0;
+            for(let x = spacing/2 + offset; x < LOGICAL_W + spacing; x += spacing){
+              // place particle
+              particles.push({
+                x: x + rnd(-0.2,0.2),
+                y: y + rnd(-0.2,0.2),
+                vx: 0,
+                vy: 0,
+                mass: mass,
+                r: radius
+              });
+            }
+            row++;
+          }
+
+          // Black-holes: invisible movers that exert gravity and bounce off walls
+          const BH_COUNT = 3;
+          const blackholes = [];
+          for(let i=0;i<BH_COUNT;i++){
+            // amplitude swings were increased previously; keep that here
+            blackholes.push({
+              x: rnd(100, LOGICAL_W-100),
+              y: rnd(100, LOGICAL_H-100),
+              vx: rnd(-120,120),
+              vy: rnd(-80,80),
+              baseMass: rnd(1200,2200), // base gravitational strength
+              amp: rnd(0.25,0.6) * 10, // amplitude relative to base, 10x
+              freq: rnd(0.5,1.2), // oscillation frequency (rad/sec)
+              phase: rnd(0, Math.PI*2),
+              radius: 10 + rnd(0,6) // collision radius for billiard bounce with walls
+            });
+          }
+
+          // Add a fixed central gravitational well at the center of the screen.
+          // Its baseMass is 10x the average baseMass of the black-holes; its
+          // actual mass will oscillate sinusoidally (including negative values).
+          let avgBase = 0;
+          for(const b of blackholes) avgBase += b.baseMass;
+          avgBase /= blackholes.length || 1;
+          const centralWell = {
+            x: LOGICAL_W/2,
+            y: LOGICAL_H/2,
+            baseMass: avgBase * 10,
+            amp: 1,
+            period: 10, // seconds
+            radius: 18
+          };
+
+          // Optionally enable mutual gravity between black-holes (simple)
+          const BH_MUTUAL_GRAVITY = true;
+          // gravitational constant tuned for visual effect (reduced earlier)
+          const G = 1200; // tune as needed
+
+          return {
+            type: 'hex',
+            particles,
+            blackholes,
+            update(dt, t){
+              // update black-holes: mass oscillates (clamped positive)
+              for(const b of blackholes){
+                const raw = b.baseMass * (1 + b.amp * Math.sin(b.freq * t + b.phase));
+                b.mass = Math.max(b.baseMass * 0.05, raw);
+              }
+
+              // central well mass oscillates sinusoidally and is allowed negative (repulsive)
+              centralWell.mass = centralWell.baseMass * Math.sin((2 * Math.PI / centralWell.period) * t) * (centralWell.amp || 1);
+
+              // black-holes dynamics: mutual gravity and integrate
+              for(const b of blackholes){
+                // accumulate acceleration from other black-holes if mutual gravity enabled
+                let ax = 0, ay = 0;
+                if(BH_MUTUAL_GRAVITY){
+                  for(const o of blackholes){
+                    if(o === b) continue;
+                    const dx = o.x - b.x;
+                    const dy = o.y - b.y;
+                    let dist2 = dx*dx + dy*dy;
+                    const minDist = (b.radius + o.radius) * 0.5;
+                    if(dist2 < minDist*minDist) dist2 = minDist*minDist;
+                    const inv = 1/Math.sqrt(dist2);
+                    const force = (G * o.mass) / dist2; // acceleration magnitude on b
+                    ax += force * (dx * inv);
+                    ay += force * (dy * inv);
+                  }
+                }
+                // integrate velocity
+                b.vx += ax * dt;
+                b.vy += ay * dt;
+              }
+
+              // integrate positions and handle wall bounces (elastic)
+              for(const b of blackholes){
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+
+                // bounce on walls
+                if(b.x < b.radius){ b.x = b.radius; b.vx = Math.abs(b.vx); }
+                if(b.x > LOGICAL_W - b.radius){ b.x = LOGICAL_W - b.radius; b.vx = -Math.abs(b.vx); }
+                if(b.y < b.radius){ b.y = b.radius; b.vy = Math.abs(b.vy); }
+                if(b.y > LOGICAL_H - b.radius){ b.y = LOGICAL_H - b.radius; b.vy = -Math.abs(b.vy); }
+              }
+
+              // Now apply gravitational acceleration from black-holes and central well to each particle
+              // We treat particles as mass=1
+              const minR = 6; // avoid singularities
+              for(const p of particles){
+                let pax = 0, pay = 0;
+                // contributions from moving black-holes
+                for(const b of blackholes){
+                  const dx = b.x - p.x;
+                  const dy = b.y - p.y;
+                  let dist2 = dx*dx + dy*dy;
+                  if(dist2 < minR*minR) dist2 = minR*minR;
+                  const invDist = 1 / Math.sqrt(dist2);
+                  const force = (G * b.mass) / dist2; // acceleration magnitude
+                  pax += force * (dx * invDist);
+                  pay += force * (dy * invDist);
+                }
+                // contribution from central well (can be negative -> repulsive)
+                {
+                  const dx = centralWell.x - p.x;
+                  const dy = centralWell.y - p.y;
+                  let dist2 = dx*dx + dy*dy;
+                  if(dist2 < minR*minR) dist2 = minR*minR;
+                  const invDist = 1 / Math.sqrt(dist2);
+                  const force = (G * centralWell.mass) / dist2;
+                  pax += force * (dx * invDist);
+                  pay += force * (dy * invDist);
+                }
+                // integrate particle velocity and position
+                p.vx += pax * dt;
+                p.vy += pay * dt;
+                // small damping so particles don't accelerate indefinitely
+                p.vx *= 0.998;
+                p.vy *= 0.998;
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+
+                // keep particles tethered to canvas (wrap mildly)
+                if(p.x < -20) p.x = LOGICAL_W + 20;
+                if(p.x > LOGICAL_W + 20) p.x = -20;
+                if(p.y < -20) p.y = LOGICAL_H + 20;
+                if(p.y > LOGICAL_H + 20) p.y = -20;
+              }
+            },
+            render(ctx, debug){
+              // clear black background
+              ctx.fillStyle = '#000';
+              ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
+
+              // draw particles as white dots
+              ctx.fillStyle = '#fff';
+              ctx.beginPath();
+              for(const p of this.particles){
+                ctx.moveTo(p.x + p.r, p.y);
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+              }
+              ctx.fill();
+
+              // optionally draw black-holes for debugging
+              if(debug){
+                for(const b of this.blackholes){
+                  ctx.beginPath();
+                  ctx.fillStyle = 'rgba(255,0,0,0.9)';
+                  ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2);
+                  ctx.fill();
+                  // draw a ring showing instantaneous effective influence (for visualization)
+                  ctx.beginPath();
+                  ctx.strokeStyle = 'rgba(255,100,100,0.5)';
+                  ctx.lineWidth = 1;
+                  const eff = Math.max(30, Math.sqrt(Math.abs(b.mass))*0.8);
+                  ctx.arc(b.x, b.y, eff, 0, Math.PI*2);
+                  ctx.stroke();
+                }
+                // draw central well with color indicating sign (red = attractive, blue = repulsive)
+                {
+                  const cw = centralWell;
+                  const sign = (cw.mass >= 0) ? 1 : -1;
+                  ctx.beginPath();
+                  ctx.fillStyle = (sign > 0) ? 'rgba(255,120,0,0.9)' : 'rgba(60,140,255,0.9)';
+                  ctx.arc(cw.x, cw.y, cw.radius, 0, Math.PI*2);
+                  ctx.fill();
+                  // ring proportional to abs(mass)
+                  ctx.beginPath();
+                  ctx.strokeStyle = (sign > 0) ? 'rgba(255,180,120,0.6)' : 'rgba(120,190,255,0.6)';
+                  ctx.lineWidth = 1;
+                  const eff = Math.max(30, Math.sqrt(Math.abs(cw.mass))*0.6);
+                  ctx.arc(cw.x, cw.y, eff, 0, Math.PI*2);
+                  ctx.stroke();
+                }
+              }
+            }
+          };
+        });
+
+        // pick a random scene at start
+        const scene = scenes[Math.floor(Math.random()*scenes.length)]();
+
+        // animation loop with fixed-step integration for stability
+        let last = performance.now()/1000;
+        let acc = 0;
+        const STEP = 1/120; // physics step size (s)
+        let time = 0;
+
+        const debugCheckbox = document.getElementById('dbg');
+
+        function frame(nowms){
+          const now = nowms/1000;
+          let dt = now - last;
+          last = now;
+          // clamp dt to avoid spiral of death
+          if(dt > 0.1) dt = 0.1;
+          acc += dt;
+          // physics: run fixed-size steps
+          while(acc >= STEP){
+            scene.update(STEP, time);
+            time += STEP;
+            acc -= STEP;
+          }
+
+          // scale logical -> display
+          const scaleX = canvas.clientWidth / canvas.width;
+          const scaleY = canvas.clientHeight / canvas.height;
+          // use transform so we can draw in logical coords
+          ctx.save();
+          ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+
+          scene.render(ctx, debugCheckbox.checked);
+
+          ctx.restore();
+
+          requestAnimationFrame(frame);
+        }
+
+        requestAnimationFrame(frame);
+
+        // small notes for the user: expose some debug controls in console
+        window.__scene = scene;
+        window.__canvasLogical = {w: LOGICAL_W, h: LOGICAL_H};
+      })();
+    </script>
+  </body>
+  </html>

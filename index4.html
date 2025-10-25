@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>30 Website Color Palettes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 50px;
+            font-size: 2.5em;
+        }
+
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+
+        .palette-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .palette-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .palette-name {
+            padding: 15px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .palette-colors {
+            display: flex;
+            height: 120px;
+        }
+
+        .color-swatch {
+            flex: 1;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding: 10px;
+            font-size: 11px;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .color-swatch:hover {
+            opacity: 0.8;
+        }
+
+        .color-code {
+            display: flex;
+            flex-wrap: wrap;
+            padding: 12px;
+            background: #fafafa;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .code {
+            background: #f0f0f0;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            flex: 1 1 45%;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .code:hover {
+            background: #e0e0e0;
+        }
+
+        .copy-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .copy-notification.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 30 Website Color Palettes</h1>
+        <div class="palette-grid" id="paletteGrid"></div>
+    </div>
+
+    <div class="copy-notification" id="notification">Copied to clipboard!</div>
+
+    <script>
+        const palettes = [
+            {
+                name: "Ocean Wave",
+                colors: ["#0077B6", "#00B4D8", "#90E0EF", "#CAF0F8", "#E0FFFF"]
+            },
+            {
+                name: "Forest Green",
+                colors: ["#1B4332", "#2D6A4F", "#40916C", "#52B788", "#74C69D"]
+            },
+            {
+                name: "Sunset Blaze",
+                colors: ["#FF6B35", "#FF8C42", "#FFB703", "#FB5607", "#FFBE0B"]
+            },
+            {
+                name: "Lavender Dream",
+                colors: ["#DDA0DD", "#DA70D6", "#EE82EE", "#DDA0DD", "#BA55D3"]
+            },
+            {
+                name: "Modern Minimalist",
+                colors: ["#2C3E50", "#34495E", "#95A5A6", "#ECF0F1", "#FFFFFF"]
+            },
+            {
+                name: "Coral Reef",
+                colors: ["#FF6B6B", "#FF8E72", "#FFB88C", "#FFA07A", "#FF4757"]
+            },
+            {
+                name: "Deep Space",
+                colors: ["#0A0E27", "#16213E", "#0F3460", "#533483", "#E94560"]
+            },
+            {
+                name: "Mint Fresh",
+                colors: ["#00D9A3", "#00B894", "#1DD1A1", "#55EFC4", "#74B9FF"]
+            },
+            {
+                name: "Berry Mix",
+                colors: ["#D946A6", "#EC4899", "#F472B6", "#FBCFE8", "#FDF2F8"]
+            },
+            {
+                name: "Golden Hour",
+                colors: ["#F59E0B", "#FBBF24", "#FCD34D", "#FDE68A", "#FEF3C7"]
+            },
+            {
+                name: "Cyberpunk Neon",
+                colors: ["#FF10F0", "#00D9FF", "#39FF14", "#FFFF00", "#FF006E"]
+            },
+            {
+                name: "Earth Tones",
+                colors: ["#8B6F47", "#A0826D", "#BCA586", "#D4C5B9", "#E8E0D5"]
+            },
+            {
+                name: "Royal Purple",
+                colors: ["#7851A9", "#9D4EDD", "#C77DFF", "#E0AAFF", "#F0E6FF"]
+            },
+            {
+                name: "Tech Blue",
+                colors: ["#003F5C", "#0084FF", "#2DD4BF", "#00D9FF", "#7DD3FC"]
+            },
+            {
+                name: "Warm Wood",
+                colors: ["#6B4423", "#8B5A2B", "#A0522D", "#CD853F", "#DEB887"]
+            },
+            {
+                name: "Soft Pastels",
+                colors: ["#FFB3BA", "#FFCCCB", "#FFFFBA", "#BAE1FF", "#FFB4D9"]
+            },
+            {
+                name: "Tropical Vibes",
+                colors: ["#06FFA5", "#00FFB4", "#00FF88", "#50FFA3", "#92FF7E"]
+            },
+            {
+                name: "Monochrome Black",
+                colors: ["#121212", "#1E1E1E", "#2D2D2D", "#404040", "#595959"]
+            },
+            {
+                name: "Cherry Blossom",
+                colors: ["#FF69B4", "#FF1493", "#FFB6C1", "#FFC0CB", "#FFE4E1"]
+            },
+            {
+                name: "Ocean Blue",
+                colors: ["#003D82", "#0066CC", "#0099FF", "#00CCFF", "#80DFFF"]
+            },
+            {
+                name: "Desert Sand",
+                colors: ["#D4A574", "#E8C4A0", "#F5DEB3", "#FFE4B5", "#FFEFD5"]
+            },
+            {
+                name: "Electric Storm",
+                colors: ["#1A1A2E", "#0F3460", "#16213E", "#E94560", "#FF006E"]
+            },
+            {
+                name: "Sage Green",
+                colors: ["#556B2F", "#6B8E23", "#8FBC8F", "#9ACD32", "#ADFF2F"]
+            },
+            {
+                name: "Candy Pop",
+                colors: ["#FF006E", "#FB5607", "#FFBE0B", "#8338EC", "#3A86FF"]
+            },
+            {
+                name: "Slate Modern",
+                colors: ["#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51"]
+            },
+            {
+                name: "Ice Cold",
+                colors: ["#F0F8FF", "#E0F6FF", "#B0E0E6", "#87CEEB", "#4682B4"]
+            },
+            {
+                name: "Sunset Orange",
+                colors: ["#FF4500", "#FF6347", "#FF7F50", "#FFA07A", "#FFB347"]
+            },
+            {
+                name: "Plum Purple",
+                colors: ["#4B0082", "#6A0572", "#8B008B", "#9932CC", "#BA55D3"]
+            },
+            {
+                name: "Fresh Lime",
+                colors: ["#32CD32", "#00FA9A", "#98FB98", "#C1FFC1", "#E0FFE0"]
+            },
+            {
+                name: "Charcoal Elite",
+                colors: ["#1C1C1C", "#2C3E50", "#34495E", "#44546A", "#566573"]
+            }
+        ];
+
+        const paletteGrid = document.getElementById('paletteGrid');
+
+        palettes.forEach((palette, index) => {
+            const card = document.createElement('div');
+            card.className = 'palette-card';
+
+            let colorsHTML = palette.colors.map(color => 
+                `<div class="color-swatch" style="background-color: ${color}" title="${color}">
+                    ${color}
+                </div>`
+            ).join('');
+
+            let codesHTML = palette.colors.map(color => 
+                `<div class="code" onclick="copyToClipboard('${color}')">${color}</div>`
+            ).join('');
+
+            card.innerHTML = `
+                <div class="palette-name">${palette.name}</div>
+                <div class="palette-colors">${colorsHTML}</div>
+                <div class="color-code">${codesHTML}</div>
+            `;
+
+            paletteGrid.appendChild(card);
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const notification = document.getElementById('notification');
+                notification.textContent = `Copied ${text} to clipboard!`;
+                notification.classList.add('show');
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, 2000);
+            });
+        }
+
+        // Allow color swatch click to copy
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('color-swatch')) {
+                copyToClipboard(e.target.title);
+            }
+        });
+    </script>
+</body>
+</html>
