@@ -237,8 +237,8 @@
               }
             },
             render(ctx, debug){
-              // clear black background
-              ctx.fillStyle = '#000';
+              // clear background with 20% alpha black to create a fade/trail effect
+              ctx.fillStyle = 'rgba(0,0,0,0.2)';
               ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
 
               // color particles by percentile of speed using visible spectrum (red -> violet)
