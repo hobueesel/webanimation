@@ -48,6 +48,29 @@
         function rnd(min,max){ return Math.random()*(max-min)+min }
         function clamp(v,a,b){ return Math.max(a, Math.min(b, v)) }
 
+        // Convert wavelength in nm (380-780) to RGB string. Uses a commonly used approximation.
+        function wavelengthToRGB(w) {
+          let r=0,g=0,b=0, factor=0;
+          if (w >= 380 && w <= 440) { r = -(w - 440) / (440 - 380); g = 0; b = 1; }
+          else if (w >= 440 && w <= 490) { r = 0; g = (w - 440) / (490 - 440); b = 1; }
+          else if (w >= 490 && w <= 510) { r = 0; g = 1; b = -(w - 510) / (510 - 490); }
+          else if (w >= 510 && w <= 580) { r = (w - 510) / (580 - 510); g = 1; b = 0; }
+          else if (w >= 580 && w <= 645) { r = 1; g = -(w - 645) / (645 - 580); b = 0; }
+          else if (w >= 645 && w <= 780) { r = 1; g = 0; b = 0; }
+          else { r = 0; g = 0; b = 0; }
+
+          // intensity factor near the vision limits
+          if (w >= 380 && w <= 420) factor = 0.3 + 0.7 * (w - 380) / (420 - 380);
+          else if (w >= 420 && w <= 700) factor = 1.0;
+          else if (w >= 700 && w <= 780) factor = 0.3 + 0.7 * (780 - w) / (780 - 700);
+          else factor = 0.0;
+
+          // gamma correction
+          const gamma = 0.8;
+          const to255 = v => Math.round(255 * Math.pow(clamp(v * factor, 0, 1), gamma));
+          return `rgb(${to255(r)},${to255(g)},${to255(b)})`;
+        }
+
         // Scene picker (randomly pick from available scenes)
         const scenes = [];
 
@@ -200,11 +223,12 @@
                 p.x += p.vx * dt;
                 p.y += p.vy * dt;
 
-                // keep particles tethered to canvas (wrap mildly)
-                if(p.x < -20) p.x = LOGICAL_W + 20;
-                if(p.x > LOGICAL_W + 20) p.x = -20;
-                if(p.y < -20) p.y = LOGICAL_H + 20;
-                if(p.y > LOGICAL_H + 20) p.y = -20;
+                // bounce particles off walls (elastic-ish)
+                // use particle radius to detect collision so particles don't clip through
+                if(p.x < p.r){ p.x = p.r; p.vx = Math.abs(p.vx); }
+                if(p.x > LOGICAL_W - p.r){ p.x = LOGICAL_W - p.r; p.vx = -Math.abs(p.vx); }
+                if(p.y < p.r){ p.y = p.r; p.vy = Math.abs(p.vy); }
+                if(p.y > LOGICAL_H - p.r){ p.y = LOGICAL_H - p.r; p.vy = -Math.abs(p.vy); }
               }
             },
             render(ctx, debug){
@@ -212,14 +236,34 @@
               ctx.fillStyle = '#000';
               ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
 
-              // draw particles as white dots
-              ctx.fillStyle = '#fff';
-              ctx.beginPath();
-              for(const p of this.particles){
-                ctx.moveTo(p.x + p.r, p.y);
-                ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+              // color particles by percentile of speed using visible spectrum (red -> violet)
+              const n = this.particles.length;
+              if(n === 0) return;
+              // compute speeds
+              const speeds = new Array(n);
+              for(let i=0;i<n;i++){
+                const p = this.particles[i];
+                speeds[i] = Math.hypot(p.vx, p.vy);
               }
-              ctx.fill();
+              // sort indices by speed ascending to compute percentile ranks
+              const indices = speeds.map((s,i)=>i).sort((a,b)=>speeds[a] - speeds[b]);
+              const percentile = new Array(n);
+              for(let rank=0; rank<n; rank++){
+                const idx = indices[rank];
+                percentile[idx] = (n > 1) ? rank / (n - 1) : 0;
+              }
+
+              // draw particles individually with color based on percentile
+              for(let i=0;i<n;i++){
+                const p = this.particles[i];
+                const perc = clamp(percentile[i], 0, 1);
+                // map percentile to wavelength: 0 -> 780nm (red), 1 -> 380nm (violet)
+                const wavelength = 780 - perc * (780 - 380);
+                ctx.fillStyle = wavelengthToRGB(wavelength);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+                ctx.fill();
+              }
 
               // optionally draw black-holes for debugging
               if(debug){
