@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Index7 - Chained Vector Impulses</title>
+  <style>
+    html,body{height:100%;margin:0;background:#05050a;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Arial}
+    body{display:flex;align-items:center;justify-content:center}
+    canvas{background:#02030a;box-shadow:0 0 40px rgba(0,0,0,.8);border:1px solid #222}
+    .ui{position:fixed;left:12px;top:12px;color:#ddd;font-size:12px}
+    .ui label{display:block;margin:4px 0}
+    .ui input[type=range]{width:200px}
+  </style>
+</head>
+<body>
+  <!-- 720p canvas -->
+  <canvas id="c" width="1280" height="720"></canvas>
+
+  <div class="ui">
+    <label>Impulse rate <input id="impulseRate" type="range" min="0" max="5" step="0.1" value="1.5"><span id="impulseRateVal" style="margin-left:6px">1.5</span></label>
+    <label>Max amplitude <input id="maxAmp" type="range" min="10" max="200" step="1" value="90"><span id="maxAmpVal" style="margin-left:6px">90</span></label>
+    <label>Damping <input id="damping" type="range" min="0.80" max="0.999" step="0.001" value="0.985"><span id="dampingVal" style="margin-left:6px">0.985</span></label>
+    <label><input id="pause" type="checkbox"> Pause</label>
+  </div>
+
+  <script>
+  (function(){
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const impulseRateSlider = document.getElementById('impulseRate');
+    const maxAmpSlider = document.getElementById('maxAmp');
+    const dampingSlider = document.getElementById('damping');
+    const pauseCheckbox = document.getElementById('pause');
+    const impulseRateVal = document.getElementById('impulseRateVal');
+    const maxAmpVal = document.getElementById('maxAmpVal');
+    const dampingVal = document.getElementById('dampingVal');
+
+    impulseRateSlider.addEventListener('input', ()=> impulseRateVal.textContent = (+impulseRateSlider.value).toFixed(1));
+    maxAmpSlider.addEventListener('input', ()=> maxAmpVal.textContent = (+maxAmpSlider.value).toFixed(0));
+    dampingSlider.addEventListener('input', ()=> dampingVal.textContent = (+dampingSlider.value).toFixed(3));
+
+    impulseRateVal.textContent = (+impulseRateSlider.value).toFixed(1);
+    maxAmpVal.textContent = (+maxAmpSlider.value).toFixed(0);
+    dampingVal.textContent = (+dampingSlider.value).toFixed(3);
+
+    const NUM_SEGMENTS = 30;     // segments per chain
+    const NUM_ALGOS = 30;       // number of slightly varied algorithms
+    const BASE_LENGTH = 20;     // base amplitude
+    const TRAIL_LENGTH = 1600;  // how many points in the trail
+
+    // Core state: original algorithm (index 0) and 29 subtly varied copies.
+    function createChain(seedIndex){
+      const t = seedIndex / (NUM_ALGOS - 1 || 1); // 0..1
+      const ampJitter = 1 + (Math.random()*0.1 - 0.05);   // ±5%
+      const angleJitter = (Math.random()*0.1 - 0.05);     // ±0.05 rad
+
+      const segments = [];
+      for(let i=0;i<NUM_SEGMENTS;i++){
+        const baseAmp = BASE_LENGTH * (0.8 + i/NUM_SEGMENTS*0.6);
+        segments.push({
+          amp: baseAmp * ampJitter,
+          ampVel: 0,
+          angle: Math.random()*Math.PI*2 + angleJitter,
+          angVel: 0,
+          // per-segment tiny natural frequency and phase offsets
+          natFreq: 0.8 + (Math.random()*0.1 - 0.05),   // within ~±5%
+          natPhase: Math.random()*Math.PI*2
+        });
+      }
+
+      // Damping varies very slightly: nearest (0) highest damping, farthest smallest.
+      const baseDamping = +dampingSlider.value;
+      const dampingRange = 0.05; // within 5% spread
+      const perAlgoDamping = baseDamping - t * (dampingRange * (1 - baseDamping));
+
+      return {
+        segments,
+        damping: perAlgoDamping,
+        impulseTimer: 0,
+        trail: [],
+        color: `hsl(${200 + t*80}, 80%, 60%)`
+      };
+    }
+
+    const root = {x: W/2, y: H/2};
+    const algos = [];
+    for(let i=0;i<NUM_ALGOS;i++) algos.push(createChain(i));
+
+    // Trail of the original algorithm's tip
+    const mainTrail = [];
+
+    let lastTime = performance.now();
+
+    function applyImpulse(algo){
+      const impulseRate = +impulseRateSlider.value;
+      if(impulseRate <= 0) return;
+
+      // Pick a random segment to perturb
+      const idx = (Math.random()*NUM_SEGMENTS)|0;
+      const s = algo.segments[idx];
+
+      // Direction impulse: spin either clockwise or counter-clockwise
+      const spinDir = Math.random() < 0.5 ? -1 : 1;
+      const spinStrength = 2 + Math.random()*4;
+      s.angVel += spinDir * spinStrength * 0.95; // keep influence under 5%
+
+      // Amplitude impulse: push toward or away from max amplitude
+      const ampDir = (Math.random()<0.5 ? -1 : 1);
+      const ampStrength = (40 + Math.random()*80) * 0.95;
+      s.ampVel += ampDir * ampStrength;
+    }
+
+    function updateAlgo(algo, dt, globalTime){
+      const maxAmp = +maxAmpSlider.value;
+
+      // schedule impulses with subtle per‑algo phase jitter
+      const rate = +impulseRateSlider.value;
+      algo.impulseTimer += dt * rate;
+      while(algo.impulseTimer > 1){
+        algo.impulseTimer -= 1;
+        applyImpulse(algo);
+      }
+
+      // integrate each segment
+      const damping = algo.damping;
+      for(let i=0;i<NUM_SEGMENTS;i++){
+        const s = algo.segments[i];
+
+        // tiny additional random impact on top of original, within 5%
+        const noise = (Math.random()-0.5)*0.1; // ±0.05 avg
+        const naturalKick = Math.sin(globalTime * s.natFreq + s.natPhase) * 0.05; // within ±5%
+
+        // angle integration
+        s.angVel += (noise + naturalKick) * 0.5;
+        s.angle += s.angVel * dt;
+        s.angVel *= damping;
+
+        // amplitude integration + bounce at bounds
+        s.ampVel += noise * 2.0;
+        s.amp += s.ampVel * dt;
+
+        if(s.amp > maxAmp){
+          s.amp = maxAmp;
+          s.ampVel = -Math.abs(s.ampVel); // bounce back
+        } else if(s.amp < 0){
+          s.amp = 0;
+          s.ampVel = Math.abs(s.ampVel);
+        }
+
+        s.ampVel *= damping;
+      }
+    }
+
+    function computeChain(segments){
+      let x = root.x;
+      let y = root.y;
+      const pts = [{x,y}];
+      for(let i=0;i<NUM_SEGMENTS;i++){
+        const s = segments[i];
+        x += Math.cos(s.angle) * s.amp;
+        y += Math.sin(s.angle) * s.amp;
+        pts.push({x,y});
+      }
+      return pts;
+    }
+
+    function draw(allPts){
+      // persistent darkening for long trail
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(2,3,10,0.12)';
+      ctx.fillRect(0,0,W,H);
+
+      // main trail as polyline (from algorithm 0 tip)
+      if(mainTrail.length > 1){
+        ctx.beginPath();
+        for(let i=0;i<mainTrail.length;i++){
+          const p = mainTrail[i];
+          if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+        }
+        ctx.strokeStyle = '#55e0ff';
+        ctx.lineWidth = 1.2;
+        ctx.globalAlpha = 0.9;
+        ctx.stroke();
+      }
+
+      // draw each algorithm chain, farther ones get less damping (already in state)
+      for(let i=0;i<allPts.length;i++){
+        const pts = allPts[i];
+        const algo = algos[i];
+
+        // lightly vary opacity by distance from original
+        const t = i/(NUM_ALGOS-1 || 1);
+        ctx.globalAlpha = 0.2 + 0.6*(1-t);
+        ctx.strokeStyle = algo.color;
+        ctx.lineWidth = 1.5;
+
+        ctx.beginPath();
+        for(let j=0;j<pts.length-1;j++){
+          const a = pts[j];
+          const b = pts[j+1];
+          if(j===0) ctx.moveTo(a.x,a.y);
+          ctx.lineTo(b.x,b.y);
+        }
+        ctx.stroke();
+      }
+
+      // joints & tips for the main algorithm (index 0)
+      const mainPts = allPts[0];
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#fffae0';
+      for(const p of mainPts){
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,2.3,0,Math.PI*2);
+        ctx.fill();
+      }
+
+      const tip = mainPts[mainPts.length-1];
+      ctx.beginPath();
+      ctx.arc(tip.x,tip.y,4.5,0,Math.PI*2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 1;
+      ctx.fill();
+    }
+
+    function loop(now){
+      const dt = (now - lastTime)/1000;
+      lastTime = now;
+
+      if(!pauseCheckbox.checked){
+        const globalTime = now * 0.001;
+
+        // update all algorithms
+        for(let i=0;i<algos.length;i++){
+          updateAlgo(algos[i], dt, globalTime);
+        }
+
+        // compute chains and mix impact: far algorithms follow the main one
+        const allPts = [];
+        const mainPts = computeChain(algos[0].segments);
+        allPts.push(mainPts);
+
+        for(let i=1;i<algos.length;i++){
+          const algo = algos[i];
+          const pts = computeChain(algo.segments);
+
+          // linear interpolation towards original (impact propagation)
+          const t = i/(NUM_ALGOS-1 || 1);
+          const mix = 0.05 * (1-t); // at most 5% influence from original
+          for(let j=0;j<pts.length;j++){
+            const a = pts[j];
+            const b = mainPts[j];
+            a.x = a.x*(1-mix) + b.x*mix;
+            a.y = a.y*(1-mix) + b.y*mix;
+          }
+
+          allPts.push(pts);
+        }
+
+        const mainTip = allPts[0][allPts[0].length-1];
+        mainTrail.push({x:mainTip.x, y:mainTip.y});
+        if(mainTrail.length > TRAIL_LENGTH) mainTrail.shift();
+
+        draw(allPts);
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    // initial clear
+    ctx.fillStyle = '#02030a';
+    ctx.fillRect(0,0,W,H);
+    requestAnimationFrame(loop);
+  })();
+  </script>
+</body>
+          if (enemy.squishTimer > 30) {
+            enemy.alive = false;
+          }
+          continue;
+        }
+        
+        // Move
+        enemy.x += enemy.vx;
+        
+        // Apply gravity
+        enemy.vy = (enemy.vy || 0) + GRAVITY;
+        if (enemy.vy > MAX_FALL_SPEED) enemy.vy = MAX_FALL_SPEED;
+        enemy.y += enemy.vy;
+        
+        // Platform collision
+        enemy.onGround = false;
+        for (const platform of platforms) {
+          if (enemy.x < platform.x + platform.width &&
+              enemy.x + enemy.width > platform.x &&
+              enemy.y < platform.y + platform.height &&
+              enemy.y + enemy.height > platform.y) {
+            
+            if (enemy.vy > 0) {
+              enemy.y = platform.y - enemy.height;
+              enemy.vy = 0;
+              enemy.onGround = true;
+            }
+          }
+        }
+        
+        // Reverse at platform edges or walls
+        if (enemy.onGround) {
+          const frontX = enemy.vx > 0 ? enemy.x + enemy.width : enemy.x;
+          let onPlatform = false;
+          for (const platform of platforms) {
+            if (frontX > platform.x && frontX < platform.x + platform.width &&
+                enemy.y + enemy.height >= platform.y && enemy.y + enemy.height <= platform.y + 5) {
+              onPlatform = true;
+              break;
+            }
+          }
+          if (!onPlatform || enemy.x < 0 || enemy.x + enemy.width > LEVEL_WIDTH) {
+            enemy.vx = -enemy.vx;
+          }
+        }
+        
+        // Player collision
+        if (player.checkCollision(enemy)) {
+          // Jumping on enemy
+          if (player.vy > 0 && player.y + player.height - player.vy <= enemy.y + enemy.height / 2) {
+            enemy.squished = true;
+            enemy.squishTimer = 0;
+            player.vy = JUMP_FORCE / 2; // Bounce
+            score += 100;
+            updateUI();
+          } else {
+            // Hit by enemy
+            player.loseLife();
+          }
+        }
+        
+        // Sword collision
+        if (swordSwing && !enemy.squished) {
+          const swordReach = player.direction === 1 ? 
+            { x: player.x + player.width, y: player.y, width: SWORD_REACH, height: player.height } :
+            { x: player.x - SWORD_REACH, y: player.y, width: SWORD_REACH, height: player.height };
+          
+          if (enemy.x < swordReach.x + swordReach.width &&
+              enemy.x + enemy.width > swordReach.x &&
+              enemy.y < swordReach.y + swordReach.height &&
+              enemy.y + enemy.height > swordReach.y) {
+            enemy.squished = true;
+            enemy.squishTimer = 0;
+            score += 150; // Bonus for sword kill
+            updateUI();
+          }
+        }
+        
+        // Remove if fallen off screen
+        if (enemy.y > GAME_HEIGHT) {
+          enemy.alive = false;
+        }
+      }
+    }
+    
+    // Update coins
+    function updateCoins() {
+      for (const coin of coins) {
+        if (coin.collected) continue;
+        
+        // Floating animation
+        if (coin.vy !== undefined) {
+          coin.vy += 0.5;
+          coin.y += coin.vy;
+          if (coin.vy > 5) {
+            coin.vy = undefined; // Stop floating, become static
+          }
+        }
+        
+        // Collection
+        if (player.checkCollision(coin)) {
+          coin.collected = true;
+          score += 50;
+          updateUI();
+        }
+      }
+    }
+    
+    // Draw functions
+    function drawPlatforms() {
+      ctx.save();
+      ctx.translate(-cameraX, 0);
+      
+      for (const platform of platforms) {
+        // Only draw platforms that are visible on screen
+        if (platform.x + platform.width < cameraX || platform.x > cameraX + GAME_WIDTH) {
+          continue;
+        }
+        
+        ctx.fillStyle = platform.color;
+        ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+        
+        // Draw brick pattern
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 2;
+        for (let x = 0; x < platform.width; x += 30) {
+          ctx.strokeRect(platform.x + x, platform.y, 30, platform.height);
+        }
+        
+        // Question mark for coin blocks
+        if (platform.hasCoin) {
+          ctx.fillStyle = '#ffaa00';
+          ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+          ctx.fillStyle = '#000';
+          ctx.font = 'bold 16px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('?', platform.x + platform.width / 2, platform.y + 15);
+        }
+      }
+      
+      ctx.restore();
+    }
+    
+    function drawCoins() {
+      ctx.save();
+      ctx.translate(-cameraX, 0);
+      
+      for (const coin of coins) {
+        if (coin.collected) continue;
+        
+        // Only draw coins visible on screen
+        if (coin.x + coin.width < cameraX || coin.x > cameraX + GAME_WIDTH) {
+          continue;
+        }
+        
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.arc(coin.x + coin.width / 2, coin.y + coin.height / 2, coin.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#ffaa00';
+        ctx.beginPath();
+        ctx.arc(coin.x + coin.width / 2, coin.y + coin.height / 2, coin.width / 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+    
+    function drawEnemies() {
+      ctx.save();
+      ctx.translate(-cameraX, 0);
+      
+      for (const enemy of enemies) {
+        if (!enemy.alive) continue;
+        
+        // Only draw enemies visible on screen
+        if (enemy.x + enemy.width < cameraX || enemy.x > cameraX + GAME_WIDTH) {
+          continue;
+        }
+        
+        if (enemy.squished) {
+          // Squished sprite
+          ctx.fillStyle = '#8b4513';
+          ctx.fillRect(enemy.x, enemy.y + enemy.height / 2, enemy.width, enemy.height / 2);
+        } else {
+          // Goomba-like enemy
+          ctx.fillStyle = '#8b4513';
+          // Body
+          ctx.fillRect(enemy.x + 4, enemy.y + 8, enemy.width - 8, enemy.height - 8);
+          // Head bump
+          ctx.fillRect(enemy.x + 2, enemy.y + 2, enemy.width - 4, 10);
+          
+          // Eyes
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(enemy.x + 6, enemy.y + 6, 4, 4);
+          ctx.fillRect(enemy.x + 14, enemy.y + 6, 4, 4);
+          
+          ctx.fillStyle = '#000';
+          ctx.fillRect(enemy.x + 7, enemy.y + 7, 2, 2);
+          ctx.fillRect(enemy.x + 15, enemy.y + 7, 2, 2);
+          
+          // Feet
+          ctx.fillStyle = '#654321';
+          const footOffset = Math.floor(Date.now() / 200) % 2;
+          ctx.fillRect(enemy.x + (footOffset ? 2 : 4), enemy.y + enemy.height - 2, 6, 2);
+          ctx.fillRect(enemy.x + (footOffset ? 14 : 12), enemy.y + enemy.height - 2, 6, 2);
+        }
+      }
+      
+      ctx.restore();
+    }
+    
+    function drawBackground() {
+      // Sky
+      const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+      gradient.addColorStop(0, '#5c94fc');
+      gradient.addColorStop(1, '#add8e6');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      
+      // Clouds - parallax scrolling (slower than camera)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      const cloudOffset = cameraX * 0.5; // Parallax effect
+      drawCloud(100 - cloudOffset % 800, 80, 60);
+      drawCloud(300 - cloudOffset % 800, 120, 80);
+      drawCloud(550 - cloudOffset % 800, 90, 70);
+      drawCloud(700 - cloudOffset % 800, 140, 65);
+      drawCloud(900 - cloudOffset % 800, 100, 75);
+    }
+    
+    function drawCloud(x, y, size) {
+      ctx.beginPath();
+      ctx.arc(x, y, size * 0.5, 0, Math.PI * 2);
+      ctx.arc(x + size * 0.4, y - size * 0.1, size * 0.4, 0, Math.PI * 2);
+      ctx.arc(x + size * 0.7, y, size * 0.45, 0, Math.PI * 2);
+      ctx.arc(x - size * 0.3, y, size * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // UI updates
+    function updateUI() {
+      document.getElementById('score').textContent = score;
+      document.getElementById('lives').textContent = lives;
+    }
+    
+    function endGame() {
+      gameOver = true;
+      document.getElementById('gameOver').style.display = 'block';
+    }
+    
+    function restartGame() {
+      gameOver = false;
+      score = 0;
+      lives = 3;
+      player.x = 100;
+      player.y = 100;
+      player.vx = 0;
+      player.vy = 0;
+      invincible = false;
+      invincibleTimer = 0;
+      
+      // Reset enemies
+      enemies.length = 0;
+      enemies.push(
+        // Starting area
+        { x: 250, y: 430, width: 24, height: 24, vx: -1.44, alive: true, squished: false },
+        { x: 430, y: 360, width: 24, height: 24, vx: 1.08, alive: true, squished: false },
+        { x: 600, y: 430, width: 24, height: 24, vx: -1.44, alive: true, squished: false },
+        
+        // Middle section
+        { x: 850, y: 460, width: 24, height: 24, vx: 1.44, alive: true, squished: false },
+        { x: 1050, y: 380, width: 24, height: 24, vx: -1.08, alive: true, squished: false },
+        { x: 1250, y: 310, width: 24, height: 24, vx: 1.44, alive: true, squished: false },
+        { x: 1430, y: 380, width: 24, height: 24, vx: -1.44, alive: true, squished: false },
+        { x: 1610, y: 450, width: 24, height: 24, vx: 1.08, alive: true, squished: false },
+        
+        // Far section
+        { x: 1950, y: 430, width: 24, height: 24, vx: -1.44, alive: true, squished: false },
+        { x: 2130, y: 350, width: 24, height: 24, vx: 1.44, alive: true, squished: false },
+        { x: 2310, y: 280, width: 24, height: 24, vx: -1.08, alive: true, squished: false },
+        { x: 2490, y: 360, width: 24, height: 24, vx: 1.44, alive: true, squished: false },
+        { x: 2690, y: 440, width: 24, height: 24, vx: -1.44, alive: true, squished: false }
+      );
+      
+      // Reset coins
+      coins.length = 0;
+      
+      // Reset platforms
+      platforms[2].hasCoin = true;
+      platforms[4].hasCoin = true;
+      platforms[6].hasCoin = true;
+      platforms[8].hasCoin = true;
+      platforms[10].hasCoin = true;
+      platforms[13].hasCoin = true;
+      platforms[15].hasCoin = true;
+      platforms[17].hasCoin = true;
+      
+      document.getElementById('gameOver').style.display = 'none';
+      updateUI();
+    }
+    
+    // Game loop
+    function gameLoop() {
+      if (!gameOver) {
+        // Update
+        player.update();
+        updateEnemies();
+        updateCoins();
+        
+        if (invincible) {
+          invincibleTimer--;
+          if (invincibleTimer <= 0) {
+            invincible = false;
+          }
+        }
+        
+        if (swordSwing) {
+          swordTimer--;
+          if (swordTimer <= 0) {
+            swordSwing = false;
+          }
+        }
+        
+        // Draw
+        drawBackground();
+        drawPlatforms();
+        drawCoins();
+        drawEnemies();
+        player.draw();
+      }
+      
+      requestAnimationFrame(gameLoop);
+    }
+    
+    // Input handling
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      
+      if (e.key === ' ' && gameOver) {
+        restartGame();
+      }
+      
+      // Prevent page scrolling
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'x', 'X'].includes(e.key)) {
+        e.preventDefault();
+      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+    
+    // Start game
+    updateUI();
+    gameLoop();
+  </script>
+</body>
+</html>

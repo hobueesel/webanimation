@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Index7 - Laplace Vectors Divergence Demo (fixed)</title>
+  <style>
+    html,body{height:100%;margin:0;background:#05050a;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Arial}
+    canvas{display:block;width:100vw;height:100vh}
+    .ui{position:fixed;left:12px;top:12px;color:#ddd}
+    .ui label{display:block;margin:6px 0;font-size:13px}
+    .ui input[type=range]{width:200px}
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="ui">
+    <label>Speed <input id="speed" type="range" min="0.01" max="10" step="0.01" value="1"><span id="speedVal" style="margin-left:8px">1.00</span></label>
+    <label>Trail length <input id="trail" type="range" min="2" max="2000" step="1" value="200"><span id="trailVal" style="margin-left:8px">200</span></label>
+    <label>Divergence <input id="divergence" type="range" min="0" max="1" step="0.01" value="0"><span id="divVal" style="margin-left:8px">0.00</span></label>
+    <label><input id="pause" type="checkbox"> Pause</label>
+    <button id="reset">Reset</button>
+  </div>
+
+  <script>
+  (function(){
+  // index7: divergence demo (fixed copy)
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width = innerWidth, H = canvas.height = innerHeight;
+
+  const speedSlider = document.getElementById('speed');
+  const trailSlider = document.getElementById('trail');
+  const divergenceSlider = document.getElementById('divergence');
+  const pauseCheckbox = document.getElementById('pause');
+  const resetBtn = document.getElementById('reset');
+  const speedVal = document.getElementById('speedVal');
+  const trailVal = document.getElementById('trailVal');
+  const divVal = document.getElementById('divVal');
+
+  addEventListener('resize', ()=>{ W = canvas.width = innerWidth; H = canvas.height = innerHeight; });
+
+  speedSlider.addEventListener('input', ()=> speedVal.textContent = (+speedSlider.value).toFixed(2));
+  trailSlider.addEventListener('input', ()=> trailVal.textContent = (+trailSlider.value));
+  divergenceSlider.addEventListener('input', ()=> divVal.textContent = (+divergenceSlider.value).toFixed(2));
+
+  // seeded RNG
+  function createRng(seed=12345){ let s = seed>>>0; return ()=>{ s = (s + 0x6D2B79F5)|0; let t = Math.imul(s ^ (s>>>15), 1 | s); t = (t + Math.imul(t ^ (t>>>7), t | 61)) ^ t; return ((t ^ (t>>>14))>>>0) / 4294967296; }; }
+
+  // ValueGrid + discrete Laplacian
+  class ValueGrid{ constructor(cols,rows,seed){ this.cols=cols; this.rows=rows; this.rng=createRng(seed); this.grid=new Float32Array((cols+1)*(rows+1)); for(let i=0;i<this.grid.length;i++) this.grid[i]=(this.rng()*2-1);} sample(u,v){ const x=u*this.cols, y=v*this.rows; const x0=Math.floor(x), y0=Math.floor(y); const sx=x-x0, sy=y-y0; const get=(ix,iy)=>this.grid[iy*(this.cols+1)+ix]; const a=get(x0,y0), b=get(x0+1,y0), c=get(x0,y0+1), d=get(x0+1,y0+1); const lerp=(A,B,t)=>A+(B-A)*t; const i1=lerp(a,b,sx), i2=lerp(c,d,sx); return lerp(i1,i2,sy);} jitter(amount=0.002){ for(let i=0;i<this.grid.length;i++) this.grid[i]+= (this.rng()*2-1)*amount; }}
+
+  const NUM = 30;
+
+  // single base algorithm (one seed)
+  const baseSeed = Math.floor(Math.random()*10000);
+  const gridX = new ValueGrid(28,28, baseSeed + 1);
+  const gridY = new ValueGrid(28,28, baseSeed + 97);
+
+  function lap(grid,u,v,off=0.006){ const c=grid.sample(u,v); const up=grid.sample(u,v-off), down=grid.sample(u,v+off), left=grid.sample(u-off,v), right=grid.sample(u+off,v); return (up+down+left+right-4*c); }
+
+  // per-vector stored offsets (direction, spin) and drifts
+  const rng = createRng(Math.floor(Math.random()*99999));
+  const vecData = new Array(NUM).fill(0).map(()=>({
+    dirOffset: (rng()-0.5)*Math.PI*2*0.5,
+    spinOffset: (rng()-0.5)*2.0,
+    drift: (function(){ const a=rng()*Math.PI*2; return {x:Math.cos(a), y:Math.sin(a)} })()
+  }));
+
+  // Particles start co-located in center so identical velocity yields same place
+  class P{ constructor(){ this.x=W/2; this.y=H/2; this.vx=0; this.vy=0; this.trail=[]; } push(){ this.trail.push([this.x,this.y]); if(this.trail.length>+trailSlider.value) this.trail.shift(); } draw(){ if(this.trail.length>1){ ctx.beginPath(); for(let i=0;i<this.trail.length;i++){ const p=this.trail[i]; if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); } ctx.strokeStyle = '#66ccff'; ctx.lineWidth=1.4; ctx.globalAlpha=0.9; ctx.stroke(); } ctx.beginPath(); ctx.arc(this.x,this.y,2.6,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.globalAlpha=1; ctx.fill(); }}
+
+  const parts = new Array(NUM).fill(0).map(()=> new P());
+
+  // reset handler
+  resetBtn.addEventListener('click', ()=>{ for(const p of parts){ p.x = W/2; p.y = H/2; p.vx=0; p.vy=0; p.trail.length=0; } });
+
+  // animation
+  let last = performance.now(); let time=0;
+  function step(now){
+    const dtRaw = (now - last)/1000; last = now; const speed = +speedSlider.value; const dt = dtRaw * speed; time += dtRaw;
+
+    // fade background a little
+    ctx.fillStyle = 'rgba(5,6,10,0.14)'; ctx.fillRect(0,0,W,H);
+
+    // small evolution to grids
+    gridX.jitter(0.0006); gridY.jitter(0.0006);
+
+    const divergence = +divergenceSlider.value; // 0..1
+
+    for(let i=0;i<NUM;i++){
+      const p = parts[i];
+      const [u0,v0] = [p.x / W, p.y / H];
+      const u = u0 * 0.9 + Math.sin(time*0.4)*0.01;
+      const v = v0 * 0.9 + Math.cos(time*0.6)*0.01;
+      const Lx = lap(gridX, u, v, 0.006);
+      const Ly = lap(gridY, u, v, 0.006);
+      let vx = Lx * 0.9;
+      let vy = Ly * 0.9;
+
+      // apply per-vector rotation offsets scaled by divergence (so 0 => identical)
+      const vd = vecData[i];
+      const rot = (vd.dirOffset + vd.spinOffset * time) * divergence;
+      const c = Math.cos(rot), s = Math.sin(rot);
+      let rx = vx*c - vy*s, ry = vx*s + vy*c;
+
+      // apply drift vector scaled by divergence
+      const driftStrength = 0.8;
+      rx += vd.drift.x * divergence * driftStrength;
+      ry += vd.drift.y * divergence * driftStrength;
+
+      // simple velocity mixing + integrate
+      p.vx = p.vx*0.78 + rx * 120 * dt;
+      p.vy = p.vy*0.78 + ry * 120 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+  // reflect at edges (invert velocity and clamp position)
+  if (p.x < 0) { p.x = -p.x; p.vx = -p.vx; }
+  if (p.x > W) { p.x = 2*W - p.x; p.vx = -p.vx; }
+  if (p.y < 0) { p.y = -p.y; p.vy = -p.vy; }
+  if (p.y > H) { p.y = 2*H - p.y; p.vy = -p.vy; }
+      p.push();
+    }
+
+    // draw
+    ctx.globalCompositeOperation = 'lighter';
+    for(const p of parts) p.draw();
+    ctx.globalCompositeOperation = 'source-over';
+
+    if(!pauseCheckbox.checked) requestAnimationFrame(step); else last = performance.now();
+  }
+
+  // start
+  ctx.fillStyle='#05050a'; ctx.fillRect(0,0,W,H);
+  requestAnimationFrame(step);
+
+  // show initial UI values
+  speedVal.textContent = (+speedSlider.value).toFixed(2);
+  trailVal.textContent = (+trailSlider.value);
+  divVal.textContent = (+divergenceSlider.value).toFixed(2);
+
+  // update trail length clamp live
+  trailSlider.addEventListener('input', ()=>{ for(const p of parts){ if(p.trail.length > +trailSlider.value) p.trail = p.trail.slice(-+trailSlider.value); }});
+
+  })();
+  </script>
+</body>
+</html>

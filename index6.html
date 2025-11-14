@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Index6 - Laplace Vectors Simulation</title>
+  <style>
+    html,body{height:100%;margin:0;background:#05050a;}
+    canvas{display:block;width:100vw;height:100vh}
+    .ui{position:fixed;left:12px;top:12px;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Arial}
+    .ui label{display:block;margin:6px 0}
+    .ui input[type=range]{width:170px}
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="ui">
+    <label>Speed <input id="speed" type="range" min="0.001" max="300" step="0.05" value="100"></label>
+    <label>Trail length <input id="trail" type="range" min="6" max="20000" step="1" value="3200"></label>
+  <label>Variation <input id="variation" type="range" min="0" max="2" step="0.01" value="0"><span id="variationVal" style="margin-left:8px">0.00</span></label>
+    <label><input id="pause" type="checkbox"> Pause</label>
+    <button id="clear">Clear Trails</button>
+  </div>
+
+  <script>
+  // index6.html - Laplace vectors simulation (30 components, 20 algorithm mutations)
+  // Contract (short):
+  // - Inputs: mouse, UI sliders (speed, trail), canvas size
+  // - Outputs: animated canvas where 30 particles move under vector fields produced by 20 similar algorithms
+  // - Error modes: none critical; fall back to defaults for unsupported features
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width = innerWidth;
+  let H = canvas.height = innerHeight;
+
+  // UI
+  const speedSlider = document.getElementById('speed');
+  const trailSlider = document.getElementById('trail');
+  const pauseCheckbox = document.getElementById('pause');
+  const clearBtn = document.getElementById('clear');
+  const variationSlider = document.getElementById('variation');
+  const variationVal = document.getElementById('variationVal');
+
+  addEventListener('resize', () => { W = canvas.width = innerWidth; H = canvas.height = innerHeight; });
+
+  // wire up variation slider
+  if(variationSlider){
+    variationSlider.addEventListener('input', (e)=>{
+      const v = +e.target.value;
+      if(variationVal) variationVal.textContent = v.toFixed(2);
+      updateVariation(v);
+    });
+    // show initial value
+    if(variationVal) variationVal.textContent = (+variationSlider.value).toFixed(2);
+  }
+
+  // Simple seeded RNG to get repeatability
+  function createRng(seed = 12345) {
+    let s = seed >>> 0;
+    return function() {
+      s = (s + 0x6D2B79F5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), t | 61)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Basic value-noise grid with bilinear interpolation
+  class ValueGrid {
+    constructor(cols, rows, seed){
+      this.cols = cols; this.rows = rows;
+      this.rng = createRng(seed);
+      this.grid = new Float32Array((cols+1)*(rows+1));
+      for(let i=0;i<this.grid.length;i++) this.grid[i] = this.rng()*2-1;
+    }
+    // bilinear sample at normalized coordinates u,v in [0,1]
+    sample(u,v){
+      const x = u * this.cols; const y = v * this.rows;
+      const x0 = Math.floor(x), y0 = Math.floor(y);
+      const sx = x - x0, sy = y - y0;
+      const i00 = (y0*(this.cols+1)) + x0;
+      const get = (ix,iy)=> this.grid[(iy*(this.cols+1))+ix];
+      const a = get(x0,y0), b = get(x0+1,y0), c = get(x0,y0+1), d = get(x0+1,y0+1);
+      const lerp = (A,B,t)=> A + (B-A)*t;
+      const i1 = lerp(a,b,sx);
+      const i2 = lerp(c,d,sx);
+      return lerp(i1,i2,sy);
+    }
+    // perturb the grid slightly over time
+    jitter(amount=0.002){
+      for(let i=0;i<this.grid.length;i++) this.grid[i] += (this.rng()*2-1)*amount;
+    }
+  }
+
+  // Parameters
+  const NUM_PARTICLES = 30; // components
+  const NUM_ALG = 20; // algorithms
+
+  // Create 20 algorithm parameter sets that are slight mutations of a base
+  // variation: multiplier for perturbation magnitude (0 -> identical to base, 1 -> original perturbation)
+  function makeAlgorithms(variation = 1){
+    // Base algorithm: noise-driven field PLUS a boundary-confinement field
+    // Confinement: when near edges (normalized distance < confineThreshold) a stronger inward force is applied
+    const base = {
+      scale: 0.9,      // spatial frequency
+      amp: 0.9,        // noise amplitude
+      timeFreq: 0.5,   // noise time evolution
+      rot: 0.0,        // small rotation
+      colorHue: 220,
+      seed: 42,
+      // confinement parameters (normalized coords)
+      confineAmp: 0.9,       // how strongly particles are pushed inward when near edge
+      confineThreshold: 0.22, // normalized distance to edge where confinement kicks in
+      confinePow: 1.4        // shaping exponent for falloff
+    };
+
+    const algs = [];
+    const rng = createRng(999);
+
+    // create slight mutations of the base so all algorithms remain similar and confining
+    for(let i=0;i<NUM_ALG;i++){
+      const perturbFactor = (frac)=> 1 + (rng()-0.5)*2*frac*variation;
+      const iFactor = 1 + i*0.0015*variation; // index-based small spread only when variation>0
+      const rotIndex = i*0.01*variation;
+      const seedPerturb = Math.floor(rng()*50*variation);
+      const alg = {
+        scale: base.scale * perturbFactor(0.12) * iFactor,
+        amp: base.amp * perturbFactor(0.18),
+        timeFreq: base.timeFreq * perturbFactor(0.25),
+        rot: base.rot + (rng()-0.5)*0.14*variation + rotIndex,
+        color: `hsl(${(base.colorHue + i*6) % 360} 78% ${48 - i*0.35}%)`,
+        seed: base.seed + seedPerturb + Math.floor(i*11*variation),
+        // keep confinement present but allow slight variation scaled by variation
+        confineAmp: base.confineAmp * (0.85 + (rng()*0.3*variation)),
+        confineThreshold: base.confineThreshold * (0.9 + (rng()*0.18*variation)),
+        confinePow: base.confinePow * (0.9 + (rng()*0.2*variation))
+      };
+      algs.push(alg);
+    }
+    return algs;
+  }
+
+  // initial variation value (1 = original perturbation magnitude)
+  const defaultVariation = +((document.getElementById('variation') && document.getElementById('variation').value) || 1);
+  let algorithms = makeAlgorithms(defaultVariation);
+
+  // Pre-create a value grid per algorithm (two grids to make a vector field)
+  let grids = algorithms.map(a => {
+    const cellCount = Math.max(8, Math.round(32 * a.scale));
+    return {
+      gx: new ValueGrid(cellCount, cellCount, a.seed + 11),
+      gy: new ValueGrid(cellCount, cellCount, a.seed + 97)
+    };
+  });
+
+  // when variation changes, regenerate the algorithms and grids
+  function updateVariation(v){
+    algorithms = makeAlgorithms(v);
+    grids = algorithms.map(a => {
+      const cellCount = Math.max(8, Math.round(32 * a.scale));
+      return { gx: new ValueGrid(cellCount, cellCount, a.seed + 11), gy: new ValueGrid(cellCount, cellCount, a.seed + 97) };
+    });
+    console.log('Variation updated to', v);
+  }
+
+  // Laplacian operator sample using neighbor samples (finite difference)
+  function laplacian(grid, u, v, t, sampleOffset=0.001){
+    // sample center and four neighbors in normalized coords
+    const c = grid.sample(u, v);
+    const up = grid.sample(u, v - sampleOffset);
+    const down = grid.sample(u, v + sampleOffset);
+    const left = grid.sample(u - sampleOffset, v);
+    const right = grid.sample(u + sampleOffset, v);
+    // discrete Laplacian (5-point stencil)
+    return (up + down + left + right - 4*c);
+  }
+
+  // Convert canvas coords to normalized [0,1]
+  function toUV(x,y){ return [x / W, y / H]; }
+
+  function getVectorFromAlgorithm(algoIndex, x,y, t){
+    const a = algorithms[algoIndex];
+    const g = grids[algoIndex];
+    // normalize position and apply scale
+    const [u0,v0] = toUV(x,y);
+    // apply small time-varying offsets to the sampling coords
+    const u = (u0 * a.scale) + Math.sin(t * a.timeFreq * 0.7) * 0.02;
+    const v = (v0 * a.scale) + Math.cos(t * a.timeFreq * 0.9) * 0.02;
+    const Lx = laplacian(g.gx, u, v, t, 0.006);
+    const Ly = laplacian(g.gy, u, v, t, 0.006);
+    // combine noise
+    let vx = Lx * a.amp;
+    let vy = Ly * a.amp;
+
+    // boundary confinement: push inward when near edges
+    const dl = u0, dr = 1 - u0, dt = v0, db = 1 - v0;
+    const minEdge = Math.min(dl, dr, dt, db);
+    let confx = 0, confy = 0;
+    const thr = a.confineThreshold || 0.22;
+    if(minEdge < thr){
+      let inward = (thr - minEdge) / thr; // 0..1 how deep into boundary zone
+      inward = Math.pow(inward, a.confinePow || 1.2);
+      // direction toward center
+      let cx = 0.5 - u0, cy = 0.5 - v0;
+      const len = Math.hypot(cx, cy) || 1;
+      cx /= len; cy /= len;
+      confx = cx * (a.confineAmp || 0.9) * inward;
+      confy = cy * (a.confineAmp || 0.9) * inward;
+    }
+
+    // add confinement
+    vx += confx; vy += confy;
+
+    // rotate slightly to add variation
+    const cos = Math.cos(a.rot), sin = Math.sin(a.rot);
+    return {x: vx*cos - vy*sin, y: vx*sin + vy*cos};
+  }
+
+  // Particle structure
+  class Particle {
+    constructor(i){
+      this.i = i;
+      this.x = Math.random()*W; this.y = Math.random()*H;
+      this.vx = 0; this.vy = 0;
+      // assign algorithms round-robin so each algorithm is represented
+      this.alg = i % NUM_ALG;
+      this.trail = []; // array of previous positions
+    }
+    step(dt, t){
+      const vf = getVectorFromAlgorithm(this.alg, this.x, this.y, t);
+      // mix with existing velocity for smoothness
+      this.vx = this.vx * 0.85 + vf.x * 120 * dt; // scale factor tuned visually
+      this.vy = this.vy * 0.85 + vf.y * 120 * dt;
+      // apply velocity and wrap
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if(this.x < 0) this.x += W; if(this.x > W) this.x -= W;
+      if(this.y < 0) this.y += H; if(this.y > H) this.y -= H;
+      // push to trail
+      this.trail.push([this.x, this.y]);
+  const maxTrail = Math.max(6, Math.min(20000, +trailSlider.value));
+      if(this.trail.length > maxTrail) this.trail.shift();
+    }
+    draw(ctx){
+      const color = algorithms[this.alg].color;
+      // draw trail
+      if(this.trail.length>1){
+        ctx.beginPath();
+        const t0 = 0.15;
+        for(let i=0;i<this.trail.length;i++){
+          const p = this.trail[i];
+          if(i===0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+        }
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.85;
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      }
+      // draw head
+      ctx.beginPath(); ctx.arc(this.x, this.y, 2.2, 0, Math.PI*2);
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.95; ctx.fill();
+    }
+  }
+
+  // Create particles
+  const particles = new Array(NUM_PARTICLES).fill(0).map((_,i)=> new Particle(i));
+
+  // Animation loop
+  let last = performance.now();
+  let time = 0;
+
+  function step(now){
+    const dtRaw = (now - last) / 1000; last = now;
+    const dt = dtRaw * (+speedSlider.value);
+    time += dtRaw;
+
+    // gentle background fade to create trailing effect
+    ctx.fillStyle = 'rgba(5,6,10,0.16)';
+    ctx.fillRect(0,0,W,H);
+
+    // jitter grids slightly to give slow evolution
+    for(const pair of grids){ pair.gx.jitter(0.0005); pair.gy.jitter(0.0005); }
+
+    if(!pauseCheckbox.checked){
+      for(const p of particles) p.step(dt, time);
+    }
+
+    // draw particles and their trails
+    ctx.globalCompositeOperation = 'lighter';
+    for(const p of particles){ p.draw(ctx); }
+    ctx.globalCompositeOperation = 'source-over';
+
+    requestAnimationFrame(step);
+  }
+
+  // UI handlers
+  clearBtn.addEventListener('click', ()=>{ for(const p of particles) p.trail.length = 0; ctx.clearRect(0,0,W,H); });
+
+  // Start with an initial dark clear to avoid flicker
+  ctx.fillStyle = '#05050a'; ctx.fillRect(0,0,W,H);
+  requestAnimationFrame(step);
+
+  // Optional: show algorithm distribution in console for debugging
+  console.log('Index6: created', NUM_PARTICLES, 'particles,', NUM_ALG, 'algorithms');
+  </script>
