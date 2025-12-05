@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swastika Blessings Drop (3D)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #05060d;
+            --bg-2: #0f1a35;
+            --accent: #ff9f1c;
+            --glass: rgba(15, 26, 53, 0.55);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(255, 159, 28, 0.08), transparent 35%),
+                        radial-gradient(circle at 80% 0%, rgba(255, 82, 82, 0.12), transparent 30%),
+                        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+            color: #e6ecff;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            overflow: hidden;
+        }
+        canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 18px;
+            left: 18px;
+            padding: 14px 16px;
+            background: var(--glass);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+            max-width: 360px;
+        }
+        #hud h1 {
+            margin: 0 0 6px 0;
+            font-size: 18px;
+            letter-spacing: 0.5px;
+        }
+        #hud p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #c8d7ff;
+            line-height: 1.45;
+        }
+        #hud .accent { color: var(--accent); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <h1>Falling Auspicious Symbols</h1>
+        <p><span class="accent">Cultural swastika:</span> traditional Indian sign for good fortune, health, and well-being.</p>
+        <p>Drag to orbit, scroll to zoom. Symbols gently tumble into a clear box.</p>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x0b1021, 25, 70);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+        camera.position.set(22, 16, 24);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 4, 0);
+        controls.enableDamping = true;
+
+        // Lights
+        const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+        scene.add(ambient);
+
+        const keyLight = new THREE.DirectionalLight(0xfff2d8, 0.9);
+        keyLight.position.set(8, 18, 10);
+        keyLight.castShadow = true;
+        keyLight.shadow.camera.near = 0.1;
+        keyLight.shadow.camera.far = 60;
+        keyLight.shadow.mapSize.set(1024, 1024);
+        scene.add(keyLight);
+
+        const rimLight = new THREE.DirectionalLight(0x6fb1ff, 0.5);
+        rimLight.position.set(-6, 12, -8);
+        scene.add(rimLight);
+
+        // Floor pad to catch shadows softly
+        const floorGeo = new THREE.CircleGeometry(24, 64);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x0f162b,
+            metalness: 0.1,
+            roughness: 0.95,
+            transparent: true,
+            opacity: 0.9
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.receiveShadow = true;
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -8;
+        scene.add(floor);
+
+        // Glassy box
+        const boxSize = 18;
+        const half = boxSize / 2;
+        const boxGeo = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        const boxMat = new THREE.MeshPhysicalMaterial({
+            color: 0x88b4ff,
+            roughness: 0.15,
+            metalness: 0.35,
+            transmission: 0.7,
+            transparent: true,
+            opacity: 0.12,
+            side: THREE.DoubleSide,
+            thickness: 0.25
+        });
+        const glassBox = new THREE.Mesh(boxGeo, boxMat);
+        glassBox.position.y = half - 8; // Lift box so floor sits just beneath
+        scene.add(glassBox);
+
+        // Wireframe outline for readability
+        const edges = new THREE.EdgesGeometry(boxGeo);
+        const lines = new THREE.LineSegments(
+            edges,
+            new THREE.LineBasicMaterial({ color: 0x6fa3ff, transparent: true, opacity: 0.3 })
+        );
+        lines.position.copy(glassBox.position);
+        scene.add(lines);
+
+        // Gradient fog plane for depth cue
+        const backdropGeo = new THREE.PlaneGeometry(120, 80);
+        const backdropMat = new THREE.MeshBasicMaterial({
+            color: 0x0d1326,
+            transparent: true,
+            opacity: 0.65,
+            side: THREE.DoubleSide
+        });
+        const backdrop = new THREE.Mesh(backdropGeo, backdropMat);
+        backdrop.position.set(0, 0, -60);
+        scene.add(backdrop);
+
+        const palette = [0xff9933, 0xf4b400, 0xff7043, 0xff3d67, 0xfaae2b];
+        const swastikas = [];
+        const gravity = new THREE.Vector3(0, -9.8, 0);
+        const clock = new THREE.Clock();
+
+        function createSwastikaMesh(size, color) {
+            const group = new THREE.Group();
+            const arm = size * 0.9;
+            const thickness = size * 0.35;
+            const depth = size * 0.22;
+            const c = thickness / 2;
+            const material = new THREE.MeshStandardMaterial({
+                color,
+                metalness: 0.2,
+                roughness: 0.45,
+                emissive: color,
+                emissiveIntensity: 0.08
+            });
+
+            const parts = [
+                { geo: new THREE.BoxGeometry(thickness, arm * 2 + thickness, depth), pos: [0, 0, 0] },
+                { geo: new THREE.BoxGeometry(arm * 2 + thickness, thickness, depth), pos: [0, 0, 0] },
+                { geo: new THREE.BoxGeometry(arm, thickness, depth), pos: [arm / 2 + c, arm + c, 0] }, // top arm to the right
+                { geo: new THREE.BoxGeometry(thickness, arm, depth), pos: [arm + c, -arm / 2, 0] }, // right arm downward
+                { geo: new THREE.BoxGeometry(arm, thickness, depth), pos: [-arm / 2 - c, -arm - c, 0] }, // bottom arm left
+                { geo: new THREE.BoxGeometry(thickness, arm, depth), pos: [-arm - c, arm / 2, 0] } // left arm upward
+            ];
+
+            parts.forEach(({ geo, pos }) => {
+                const mesh = new THREE.Mesh(geo, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.position.set(pos[0], pos[1], pos[2]);
+                group.add(mesh);
+            });
+
+            const radius = arm + thickness;
+            return { mesh: group, radius };
+        }
+
+        function spawnSwastikas(count = 26) {
+            for (let i = 0; i < count; i++) {
+                const size = THREE.MathUtils.randFloat(0.8, 1.25);
+                const color = palette[i % palette.length];
+                const { mesh, radius } = createSwastikaMesh(size, color);
+
+                mesh.position.set(
+                    THREE.MathUtils.randFloatSpread(half - 2),
+                    glassBox.position.y + half + THREE.MathUtils.randFloat(2, 8),
+                    THREE.MathUtils.randFloatSpread(half - 2)
+                );
+                mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+
+                swastikas.push({
+                    mesh,
+                    radius,
+                    velocity: new THREE.Vector3(
+                        THREE.MathUtils.randFloatSpread(2),
+                        -THREE.MathUtils.randFloat(0.5, 2.5),
+                        THREE.MathUtils.randFloatSpread(2)
+                    ),
+                    angularVelocity: new THREE.Vector3(
+                        THREE.MathUtils.randFloatSpread(1.5),
+                        THREE.MathUtils.randFloatSpread(1.5),
+                        THREE.MathUtils.randFloatSpread(1.5)
+                    ),
+                    entered: false
+                });
+                scene.add(mesh);
+            }
+        }
+
+        spawnSwastikas();
+
+        function updateSwastika(s, dt) {
+            s.velocity.addScaledVector(gravity, dt);
+            s.velocity.multiplyScalar(0.997);
+            s.mesh.position.addScaledVector(s.velocity, dt);
+
+            s.mesh.rotation.x += s.angularVelocity.x * dt;
+            s.mesh.rotation.y += s.angularVelocity.y * dt;
+            s.mesh.rotation.z += s.angularVelocity.z * dt;
+
+            const limitX = glassBox.position.x + half - s.radius;
+            const limitNegX = glassBox.position.x - half + s.radius;
+            const limitZ = glassBox.position.z + half - s.radius;
+            const limitNegZ = glassBox.position.z - half + s.radius;
+            const floorY = glassBox.position.y - half + s.radius;
+            const ceilingY = glassBox.position.y + half - s.radius;
+
+            if (s.mesh.position.x > limitX) {
+                s.mesh.position.x = limitX;
+                s.velocity.x *= -0.55;
+            } else if (s.mesh.position.x < limitNegX) {
+                s.mesh.position.x = limitNegX;
+                s.velocity.x *= -0.55;
+            }
+
+            if (s.mesh.position.z > limitZ) {
+                s.mesh.position.z = limitZ;
+                s.velocity.z *= -0.55;
+            } else if (s.mesh.position.z < limitNegZ) {
+                s.mesh.position.z = limitNegZ;
+                s.velocity.z *= -0.55;
+            }
+
+            if (s.mesh.position.y < floorY) {
+                s.mesh.position.y = floorY;
+                s.velocity.y *= -0.45;
+                s.velocity.x *= 0.94;
+                s.velocity.z *= 0.94;
+            }
+
+            if (s.mesh.position.y < glassBox.position.y + half) {
+                s.entered = true;
+            }
+
+            if (s.entered && s.mesh.position.y > ceilingY) {
+                s.mesh.position.y = ceilingY;
+                s.velocity.y *= -0.4;
+            }
+        }
+
+        function animate() {
+            const dt = clock.getDelta();
+            swastikas.forEach(s => updateSwastika(s, dt));
+            controls.update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
