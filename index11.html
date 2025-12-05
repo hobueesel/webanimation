@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravity Physics Solar System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: none;
+            user-select: none;
+            width: 300px;
+        }
+        h1 { margin: 0 0 10px 0; font-size: 24px; }
+        p { margin: 5px 0; font-size: 14px; color: #ccc; }
+        .stat { font-family: monospace; color: #0f0; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Gravity Simulator</h1>
+        <p>Comets are simulated using Newton's laws.</p>
+        <p>Watch them slingshot around planets!</p>
+        <p>Active Comets: <span id="cometCount" class="stat">0</span></p>
+        <p>Collisions: <span id="collisionCount" class="stat">0</span></p>
+        <p style="margin-top:10px; font-size:12px; color:#888;">Left Click + Drag to Rotate | Scroll to Zoom</p>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        // --- Configuration ---
+        const G = 0.5; // Gravitational Constant (tuned for visual speed)
+        const TIME_STEP = 0.5; // Simulation speed
+        const MAX_COMETS = 50;
+        const TRAIL_LENGTH = 100;
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        camera.position.set(0, 300, 500);
+        camera.lookAt(0, 0, 0);
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        scene.add(ambientLight);
+        const sunLight = new THREE.PointLight(0xffffff, 2, 2000);
+        scene.add(sunLight);
+
+        // --- Starfield ---
+        function createStars() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            for (let i = 0; i < 5000; i++) {
+                vertices.push(THREE.MathUtils.randFloatSpread(3000), THREE.MathUtils.randFloatSpread(3000), THREE.MathUtils.randFloatSpread(3000));
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            const stars = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x888888, size: 2 }));
+            scene.add(stars);
+        }
+        createStars();
+
+        // --- Solar System Objects ---
+        const planets = [];
+        const comets = [];
+        let collisionCounter = 0;
+
+        // Sun
+        const sunMass = 5000;
+        const sunMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(20, 32, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        const sunGlow = new THREE.Mesh(
+            new THREE.SphereGeometry(25, 32, 32),
+            new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.3 })
+        );
+        scene.add(sunMesh);
+        scene.add(sunGlow);
+
+        // Planet Factory
+        function createPlanet(name, radius, distance, color, mass) {
+            const mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(radius, 32, 32),
+                new THREE.MeshStandardMaterial({ color: color, roughness: 0.8 })
+            );
+            
+            // Visual Orbit Path
+            const pathGeo = new THREE.RingGeometry(distance - 0.2, distance + 0.2, 128);
+            const pathMat = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+            const path = new THREE.Mesh(pathGeo, pathMat);
+            path.rotation.x = Math.PI / 2;
+            scene.add(path);
+
+            // Add to scene
+            scene.add(mesh);
+
+            // Calculate orbital speed for circular orbit: v = sqrt(GM/r)
+            // We assume Sun is stationary and dominant mass
+            const speed = Math.sqrt((G * sunMass) / distance);
+
+            planets.push({
+                name: name,
+                mesh: mesh,
+                mass: mass,
+                radius: radius,
+                distance: distance,
+                angle: Math.random() * Math.PI * 2,
+                speed: speed,
+                position: new THREE.Vector3()
+            });
+        }
+
+        // Create Planets (Masses are relative approximations for gameplay feel)
+        createPlanet("Mercury", 3, 50, 0xaaaaaa, 50);
+        createPlanet("Venus", 5, 80, 0xe3bb76, 400);
+        createPlanet("Earth", 5.5, 110, 0x2233ff, 450);
+        createPlanet("Mars", 4, 150, 0xff3300, 100);
+        createPlanet("Jupiter", 15, 240, 0xd8ca9d, 3000); // Huge mass for gravity assists
+        createPlanet("Saturn", 12, 320, 0xcfa574, 2000);
+        createPlanet("Uranus", 8, 400, 0x99ffff, 1000);
+        createPlanet("Neptune", 8, 480, 0x3333ff, 1000);
+
+        // --- Physics Engine ---
+
+        class Comet {
+            constructor() {
+                this.mesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(1.5, 8, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xffffff })
+                );
+                
+                // Trail
+                this.trailGeo = new THREE.BufferGeometry();
+                this.trailPositions = new Float32Array(TRAIL_LENGTH * 3);
+                this.trailGeo.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
+                this.trailMat = new THREE.LineBasicMaterial({ 
+                    color: 0x00ffff, 
+                    transparent: true, 
+                    opacity: 0.6,
+                    blending: THREE.AdditiveBlending
+                });
+                this.trail = new THREE.Line(this.trailGeo, this.trailMat);
+                this.trailIdx = 0;
+
+                scene.add(this.mesh);
+                scene.add(this.trail);
+
+                this.reset();
+            }
+
+            reset() {
+                // Spawn at random edge of system
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 600 + Math.random() * 200;
+                this.pos = new THREE.Vector3(Math.cos(angle) * dist, (Math.random() - 0.5) * 50, Math.sin(angle) * dist);
+                
+                // Aim roughly towards center but with randomness to create orbits/slingshots
+                const target = new THREE.Vector3((Math.random()-0.5)*200, (Math.random()-0.5)*50, (Math.random()-0.5)*200);
+                const dir = new THREE.Vector3().subVectors(target, this.pos).normalize();
+                const speed = 1.5 + Math.random() * 2; // Initial speed
+                
+                this.vel = dir.multiplyScalar(speed);
+                this.acc = new THREE.Vector3();
+                this.active = true;
+                this.mesh.visible = true;
+                this.trail.visible = true;
+                
+                // Reset trail
+                for(let i=0; i<this.trailPositions.length; i++) this.trailPositions[i] = 0;
+            }
+
+            update() {
+                if (!this.active) return;
+
+                // 1. Calculate Forces
+                this.acc.set(0, 0, 0);
+
+                // Force from Sun
+                this.applyGravity(new THREE.Vector3(0,0,0), sunMass, 20);
+
+                // Force from Planets
+                for (let p of planets) {
+                    if (this.applyGravity(p.position, p.mass, p.radius)) {
+                        return; // Collision happened
+                    }
+                }
+
+                // 2. Integrate (Euler)
+                this.vel.add(this.acc.clone().multiplyScalar(TIME_STEP));
+                this.pos.add(this.vel.clone().multiplyScalar(TIME_STEP));
+
+                // 3. Update Visuals
+                this.mesh.position.copy(this.pos);
+                this.updateTrail();
+
+                // 4. Check bounds (remove if too far)
+                if (this.pos.length() > 1500) {
+                    this.reset();
+                }
+            }
+
+            applyGravity(center, mass, radius) {
+                const diff = new THREE.Vector3().subVectors(center, this.pos);
+                const dist = diff.length();
+
+                // Collision Check
+                if (dist < radius + 1) {
+                    this.explode(center);
+                    return true;
+                }
+
+                // Gravity Formula: F = G * M / r^2
+                // Acceleration a = F / m_comet = G * M / r^2
+                // We clamp distance to avoid infinity
+                const safeDist = Math.max(dist, 5); 
+                const forceMagnitude = (G * mass) / (safeDist * safeDist);
+                
+                diff.normalize().multiplyScalar(forceMagnitude);
+                this.acc.add(diff);
+                return false;
+            }
+
+            updateTrail() {
+                // Shift positions
+                // A ring buffer would be better but this is simple for <100 points
+                for (let i = (TRAIL_LENGTH - 1) * 3; i >= 3; i--) {
+                    this.trailPositions[i] = this.trailPositions[i - 3];
+                }
+                this.trailPositions[0] = this.pos.x;
+                this.trailPositions[1] = this.pos.y;
+                this.trailPositions[2] = this.pos.z;
+                this.trailGeo.attributes.position.needsUpdate = true;
+            }
+
+            explode(pos) {
+                this.active = false;
+                this.mesh.visible = false;
+                this.trail.visible = false;
+                
+                // Visual feedback
+                createExplosion(pos, 0xffaa00);
+                
+                collisionCounter++;
+                document.getElementById('collisionCount').innerText = collisionCounter;
+
+                // Respawn after delay
+                setTimeout(() => this.reset(), 2000);
+            }
+        }
+
+        // --- Explosion Effect ---
+        function createExplosion(pos, color) {
+            const particleCount = 20;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+
+            for(let i=0; i<particleCount; i++) {
+                positions[i*3] = pos.x;
+                positions[i*3+1] = pos.y;
+                positions[i*3+2] = pos.z;
+                velocities.push(new THREE.Vector3(
+                    (Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2
+                ));
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({ color: color, size: 4, transparent: true });
+            const particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // Animate explosion
+            let age = 0;
+            function animateExplosion() {
+                age++;
+                if(age > 50) {
+                    scene.remove(particles);
+                    return;
+                }
+                const posAttr = particles.geometry.attributes.position;
+                for(let i=0; i<particleCount; i++) {
+                    posAttr.array[i*3] += velocities[i].x;
+                    posAttr.array[i*3+1] += velocities[i].y;
+                    posAttr.array[i*3+2] += velocities[i].z;
+                }
+                posAttr.needsUpdate = true;
+                material.opacity -= 0.02;
+                requestAnimationFrame(animateExplosion);
+            }
+            animateExplosion();
+        }
+
+        // --- Init Comets ---
+        for(let i=0; i<MAX_COMETS; i++) {
+            setTimeout(() => {
+                comets.push(new Comet());
+                document.getElementById('cometCount').innerText = comets.length;
+            }, i * 200); // Stagger spawn
+        }
+
+        // --- Controls ---
+        let isDragging = false;
+        let prevMouse = { x: 0, y: 0 };
+        let camAngle = { x: 0, y: 0.5 };
+        let camDist = 400;
+
+        document.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+        document.addEventListener('mouseup', () => isDragging = false);
+        document.addEventListener('mousemove', e => {
+            if(!isDragging) return;
+            const dx = e.clientX - prevMouse.x;
+            const dy = e.clientY - prevMouse.y;
+            camAngle.x -= dx * 0.005;
+            camAngle.y -= dy * 0.005;
+            camAngle.y = Math.max(0.1, Math.min(Math.PI - 0.1, camAngle.y));
+            prevMouse = { x: e.clientX, y: e.clientY };
+        });
+        document.addEventListener('wheel', e => {
+            camDist += e.deltaY * 0.5;
+            camDist = Math.max(100, Math.min(1000, camDist));
+        });
+
+        // --- Main Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update Camera
+            camera.position.x = camDist * Math.sin(camAngle.y) * Math.sin(camAngle.x);
+            camera.position.y = camDist * Math.cos(camAngle.y);
+            camera.position.z = camDist * Math.sin(camAngle.y) * Math.cos(camAngle.x);
+            camera.lookAt(0, 0, 0);
+
+            // Update Planets (Kinematic / On Rails)
+            planets.forEach(p => {
+                p.angle += p.speed * 0.05 * TIME_STEP; // Scale speed for visual
+                p.position.set(
+                    Math.cos(p.angle) * p.distance,
+                    0,
+                    Math.sin(p.angle) * p.distance
+                );
+                p.mesh.position.copy(p.position);
+            });
+
+            // Update Comets (Dynamic / Physics)
+            comets.forEach(c => c.update());
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
