@@ -230,7 +230,7 @@
 
         function updateSwastika(s, dt) {
             s.velocity.addScaledVector(gravity, dt);
-            s.velocity.multiplyScalar(0.997);
+            s.velocity.multiplyScalar(0.9985);
             s.mesh.position.addScaledVector(s.velocity, dt);
 
             s.mesh.rotation.x += s.angularVelocity.x * dt;
@@ -262,9 +262,9 @@
 
             if (s.mesh.position.y < floorY) {
                 s.mesh.position.y = floorY;
-                s.velocity.y *= -0.45;
-                s.velocity.x *= 0.94;
-                s.velocity.z *= 0.94;
+                s.velocity.y *= -0.9;
+                s.velocity.x *= 0.985;
+                s.velocity.z *= 0.985;
             }
 
             if (s.mesh.position.y < glassBox.position.y + half) {
