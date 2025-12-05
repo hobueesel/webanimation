@@ -147,6 +147,47 @@
         🖱️ Drag to rotate | Scroll to zoom
     </div>
 
+    <div id="skills-info" style="position: fixed; top: 100px; left: 20px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 10px; z-index: 1000; font-size: 12px;">
+        <h3 style="color: #ffd700; margin-bottom: 10px;">⚡ Special Skills</h3>
+        <div style="margin-bottom: 8px;">
+            <b style="color: #ffcc00;">🐔 Chickens:</b><br>
+            ⚡ <span style="color: #00ffff;">Peck Flurry</span> - Quick 3-hit combo<br>
+            💥 <span style="color: #ff00ff;">Egg Bomb</span> - Charged AOE explosion
+        </div>
+        <div>
+            <b style="color: #ff6b6b;">🐄 Cows:</b><br>
+            ⚡ <span style="color: #00ff00;">Tail Whip</span> - Quick sweep attack<br>
+            💥 <span style="color: #ff4400;">MOO-CLEAR BLAST</span> - Devastating charge attack
+        </div>
+    </div>
+
+    <div id="ml-panel" style="position: fixed; top: 100px; right: 20px; background: rgba(0,0,0,0.85); color: white; padding: 15px; border-radius: 10px; z-index: 1000; font-size: 12px; width: 280px; border: 1px solid #4a90d9;">
+        <h3 style="color: #4a90d9; margin-bottom: 10px;">🤖 ML Auto-Balance</h3>
+        <div style="margin-bottom: 8px;">
+            <b>Battle History:</b><br>
+            🐔 Chicken Wins: <span id="ml-chicken-wins">0</span><br>
+            🐄 Cow Wins: <span id="ml-cow-wins">0</span><br>
+            📊 Win Rate: <span id="ml-winrate">50%</span> chickens
+        </div>
+        <div style="margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 5px;">
+            <b>Current Multipliers:</b><br>
+            🐔 Chicken Power: <span id="ml-chicken-mult">1.00</span>x<br>
+            🐄 Cow Power: <span id="ml-cow-mult">1.00</span>x
+        </div>
+        <div style="margin-bottom: 8px;">
+            <b>Learning Rate:</b> <span id="ml-lr">0.05</span><br>
+            <b>Target:</b> 50% win rate each
+        </div>
+        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+            <button onclick="mlBalance.reset()" style="padding: 5px 10px; cursor: pointer; background: #ff6b6b; border: none; border-radius: 5px; color: white; font-size: 11px;">Reset ML</button>
+            <button onclick="runAutoBalance(10)" style="padding: 5px 10px; cursor: pointer; background: #4a90d9; border: none; border-radius: 5px; color: white; font-size: 11px;">Auto 10x</button>
+            <button onclick="toggleAutoPlay()" style="padding: 5px 10px; cursor: pointer; background: #50c878; border: none; border-radius: 5px; color: white; font-size: 11px;" id="auto-play-btn">▶ Auto-Play</button>
+        </div>
+        <div style="margin-top: 8px; font-size: 10px; color: #888;">
+            ML adjusts balance after each battle to achieve 50/50 win rate.
+        </div>
+    </div>
+
     <div id="winner">
         <div id="winner-text"></div>
         <button onclick="restartBattle()">🔄 Restart Battle</button>
@@ -221,17 +262,514 @@
         let cows = [];
         let battleActive = true;
         let particles = [];
+        let autoPlayEnabled = false;
+        let autoBalanceRemaining = 0;
 
-        // Entity stats
-        const CHICKEN_HP = 10;
-        const CHICKEN_DAMAGE = 2;
-        const CHICKEN_SPEED = 0.15;
-
-        const COW_HP = 150;
-        const COW_DAMAGE = 15;
-        const COW_SPEED = 0.08;
+        // ==========================================
+        // ML AUTO-BALANCE SYSTEM
+        // ==========================================
+        const mlBalance = {
+            // Base stats (before multipliers)
+            baseStats: {
+                chicken: { hp: 10, damage: 2, speed: 0.15 },
+                cow: { hp: 200, damage: 18, speed: 0.1 }
+            },
+            
+            // Learned multipliers
+            chickenMult: 1.0,
+            cowMult: 1.0,
+            
+            // Battle history
+            chickenWins: 0,
+            cowWins: 0,
+            recentResults: [], // Last N results for moving average
+            maxHistory: 20,
+            
+            // Learning parameters
+            learningRate: 0.05,
+            minMult: 0.5,
+            maxMult: 2.0,
+            
+            // Load from localStorage
+            load() {
+                try {
+                    const saved = localStorage.getItem('chickenCowML');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        this.chickenMult = data.chickenMult || 1.0;
+                        this.cowMult = data.cowMult || 1.0;
+                        this.chickenWins = data.chickenWins || 0;
+                        this.cowWins = data.cowWins || 0;
+                        this.recentResults = data.recentResults || [];
+                        console.log('ML state loaded:', data);
+                    }
+                } catch (e) {
+                    console.log('No saved ML state found');
+                }
+                this.updateUI();
+            },
+            
+            // Save to localStorage
+            save() {
+                const data = {
+                    chickenMult: this.chickenMult,
+                    cowMult: this.cowMult,
+                    chickenWins: this.chickenWins,
+                    cowWins: this.cowWins,
+                    recentResults: this.recentResults
+                };
+                localStorage.setItem('chickenCowML', JSON.stringify(data));
+            },
+            
+            // Record battle result and learn
+            recordResult(winner) {
+                // Update counters
+                if (winner === 'chicken') {
+                    this.chickenWins++;
+                    this.recentResults.push(1); // 1 = chicken win
+                } else {
+                    this.cowWins++;
+                    this.recentResults.push(0); // 0 = cow win
+                }
+                
+                // Keep only recent history
+                if (this.recentResults.length > this.maxHistory) {
+                    this.recentResults.shift();
+                }
+                
+                // Learn from result using gradient descent
+                this.learn();
+                
+                // Save state
+                this.save();
+                this.updateUI();
+            },
+            
+            // Simple gradient descent learning
+            learn() {
+                if (this.recentResults.length < 3) return; // Need some history
+                
+                // Calculate recent win rate for chickens
+                const recentChickenWinRate = this.recentResults.reduce((a, b) => a + b, 0) / this.recentResults.length;
+                
+                // Target is 0.5 (50% win rate)
+                const error = recentChickenWinRate - 0.5;
+                
+                // Adjust multipliers based on error
+                // If chickens winning too much (error > 0), reduce chicken power OR increase cow power
+                // If cows winning too much (error < 0), increase chicken power OR reduce cow power
+                
+                const adjustment = error * this.learningRate;
+                
+                // We'll adjust both sides in opposite directions for faster convergence
+                this.chickenMult -= adjustment;
+                this.cowMult += adjustment;
+                
+                // Clamp to reasonable bounds
+                this.chickenMult = Math.max(this.minMult, Math.min(this.maxMult, this.chickenMult));
+                this.cowMult = Math.max(this.minMult, Math.min(this.maxMult, this.cowMult));
+                
+                console.log(`ML Learn: error=${error.toFixed(3)}, chickenMult=${this.chickenMult.toFixed(3)}, cowMult=${this.cowMult.toFixed(3)}`);
+            },
+            
+            // Get current stats with multipliers applied
+            getChickenStats() {
+                return {
+                    hp: Math.round(this.baseStats.chicken.hp * this.chickenMult),
+                    damage: Math.round(this.baseStats.chicken.damage * this.chickenMult * 10) / 10,
+                    speed: this.baseStats.chicken.speed * Math.sqrt(this.chickenMult)
+                };
+            },
+            
+            getCowStats() {
+                return {
+                    hp: Math.round(this.baseStats.cow.hp * this.cowMult),
+                    damage: Math.round(this.baseStats.cow.damage * this.cowMult * 10) / 10,
+                    speed: this.baseStats.cow.speed * Math.sqrt(this.cowMult)
+                };
+            },
+            
+            // Reset all learned data
+            reset() {
+                this.chickenMult = 1.0;
+                this.cowMult = 1.0;
+                this.chickenWins = 0;
+                this.cowWins = 0;
+                this.recentResults = [];
+                localStorage.removeItem('chickenCowML');
+                this.updateUI();
+                addLogEntry('🤖 ML balance reset!', 'chicken');
+            },
+            
+            // Update UI display
+            updateUI() {
+                document.getElementById('ml-chicken-wins').textContent = this.chickenWins;
+                document.getElementById('ml-cow-wins').textContent = this.cowWins;
+                document.getElementById('ml-chicken-mult').textContent = this.chickenMult.toFixed(2);
+                document.getElementById('ml-cow-mult').textContent = this.cowMult.toFixed(2);
+                document.getElementById('ml-lr').textContent = this.learningRate.toFixed(2);
+                
+                const total = this.chickenWins + this.cowWins;
+                const winRate = total > 0 ? (this.chickenWins / total * 100).toFixed(1) : '50.0';
+                document.getElementById('ml-winrate').textContent = winRate + '%';
+            }
+        };
+        
+        // Load ML state on startup
+        mlBalance.load();
+        
+        // Auto-play functionality
+        function toggleAutoPlay() {
+            autoPlayEnabled = !autoPlayEnabled;
+            const btn = document.getElementById('auto-play-btn');
+            btn.textContent = autoPlayEnabled ? '⏸ Stop' : '▶ Auto-Play';
+            btn.style.background = autoPlayEnabled ? '#ff6b6b' : '#50c878';
+            
+            if (autoPlayEnabled && !battleActive) {
+                restartBattle();
+            }
+        }
+        
+        function runAutoBalance(count) {
+            autoBalanceRemaining = count;
+            if (!battleActive) {
+                restartBattle();
+            }
+            addLogEntry(`🤖 Running ${count} auto-balance battles...`, 'chicken');
+        }
+        
+        // Dynamic stats that use ML multipliers
+        function getChickenHP() { return mlBalance.getChickenStats().hp; }
+        function getChickenDamage() { return mlBalance.getChickenStats().damage; }
+        function getChickenSpeed() { return mlBalance.getChickenStats().speed; }
+        function getCowHP() { return mlBalance.getCowStats().hp; }
+        function getCowDamage() { return mlBalance.getCowStats().damage; }
+        function getCowSpeed() { return mlBalance.getCowStats().speed; }
 
         const FIELD_SIZE = 80;
+
+        // Special skill effects
+        let skillEffects = [];
+
+        // Create skill charging visual
+        function createChargingEffect(x, y, z, color, scale = 1) {
+            const group = new THREE.Group();
+            
+            // Glowing ring
+            const ringGeometry = new THREE.RingGeometry(0.5 * scale, 0.8 * scale, 32);
+            const ringMaterial = new THREE.MeshBasicMaterial({ 
+                color: color, 
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.rotation.x = -Math.PI / 2;
+            group.add(ring);
+            
+            // Particles rising
+            for (let i = 0; i < 8; i++) {
+                const particleGeometry = new THREE.SphereGeometry(0.1 * scale, 6, 6);
+                const particleMaterial = new THREE.MeshBasicMaterial({ color: color });
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+                const angle = (i / 8) * Math.PI * 2;
+                particle.position.set(Math.cos(angle) * 0.6 * scale, 0, Math.sin(angle) * 0.6 * scale);
+                particle.userData = { angle, speed: 0.05 + Math.random() * 0.05 };
+                group.add(particle);
+            }
+            
+            group.position.set(x, y, z);
+            scene.add(group);
+            
+            return {
+                mesh: group,
+                life: 2,
+                update: function(dt) {
+                    this.life -= dt;
+                    // Rotate ring
+                    group.children[0].rotation.z += 0.1;
+                    // Scale up
+                    const scale = 1 + (2 - this.life) * 0.5;
+                    group.children[0].scale.set(scale, scale, 1);
+                    // Animate particles
+                    for (let i = 1; i < group.children.length; i++) {
+                        const p = group.children[i];
+                        p.position.y += p.userData.speed;
+                        p.userData.angle += 0.1;
+                        p.position.x = Math.cos(p.userData.angle) * 0.6 * scale;
+                        p.position.z = Math.sin(p.userData.angle) * 0.6 * scale;
+                    }
+                    return this.life > 0;
+                }
+            };
+        }
+
+        // Explosion effect for ultimate skills
+        function createExplosionEffect(x, y, z, color, radius, damage, sourceType) {
+            const group = new THREE.Group();
+            
+            // Expanding sphere
+            const sphereGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const sphereMaterial = new THREE.MeshBasicMaterial({ 
+                color: color,
+                transparent: true,
+                opacity: 0.6
+            });
+            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+            group.add(sphere);
+            
+            // Shockwave ring
+            const shockGeometry = new THREE.RingGeometry(0.1, 0.5, 32);
+            const shockMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const shockwave = new THREE.Mesh(shockGeometry, shockMaterial);
+            shockwave.rotation.x = -Math.PI / 2;
+            group.add(shockwave);
+            
+            // Debris particles
+            for (let i = 0; i < 20; i++) {
+                const debrisGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                const debrisMaterial = new THREE.MeshBasicMaterial({ color: color });
+                const debris = new THREE.Mesh(debrisGeometry, debrisMaterial);
+                debris.userData = {
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.5,
+                        Math.random() * 0.4 + 0.2,
+                        (Math.random() - 0.5) * 0.5
+                    )
+                };
+                group.add(debris);
+            }
+            
+            group.position.set(x, y, z);
+            scene.add(group);
+            
+            // Deal damage to enemies in radius
+            const enemies = sourceType === 'chicken' ? cows : chickens;
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                const dx = enemy.x - x;
+                const dz = enemy.z - z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < radius) {
+                    const falloff = 1 - (dist / radius) * 0.5;
+                    enemy.takeDamage(Math.round(damage * falloff), null);
+                }
+            });
+            
+            return {
+                mesh: group,
+                life: 1.5,
+                maxRadius: radius,
+                update: function(dt) {
+                    this.life -= dt;
+                    const progress = 1 - (this.life / 1.5);
+                    
+                    // Expand sphere
+                    const sphereScale = progress * this.maxRadius * 2;
+                    group.children[0].scale.set(sphereScale, sphereScale, sphereScale);
+                    group.children[0].material.opacity = 0.6 * (1 - progress);
+                    
+                    // Expand shockwave
+                    const shockScale = progress * this.maxRadius * 3;
+                    group.children[1].scale.set(shockScale, shockScale, 1);
+                    group.children[1].material.opacity = 0.8 * (1 - progress);
+                    
+                    // Animate debris
+                    for (let i = 2; i < group.children.length; i++) {
+                        const debris = group.children[i];
+                        debris.position.add(debris.userData.velocity);
+                        debris.userData.velocity.y -= 0.02;
+                        debris.rotation.x += 0.1;
+                        debris.rotation.z += 0.1;
+                    }
+                    
+                    return this.life > 0;
+                }
+            };
+        }
+
+        // Quick attack effect (slashes/hits)
+        function createQuickAttackEffect(x, y, z, color, count = 3) {
+            const group = new THREE.Group();
+            
+            for (let i = 0; i < count; i++) {
+                const slashGeometry = new THREE.PlaneGeometry(0.8, 0.2);
+                const slashMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color,
+                    transparent: true,
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+                const slash = new THREE.Mesh(slashGeometry, slashMaterial);
+                slash.rotation.z = (Math.random() - 0.5) * Math.PI;
+                slash.rotation.y = Math.random() * Math.PI;
+                slash.position.set(
+                    (Math.random() - 0.5) * 0.5,
+                    (Math.random() - 0.5) * 0.5 + 0.5,
+                    (Math.random() - 0.5) * 0.5
+                );
+                slash.userData = { delay: i * 0.1 };
+                group.add(slash);
+            }
+            
+            group.position.set(x, y, z);
+            scene.add(group);
+            
+            return {
+                mesh: group,
+                life: 0.5,
+                update: function(dt) {
+                    this.life -= dt;
+                    const progress = 1 - (this.life / 0.5);
+                    
+                    group.children.forEach((slash, i) => {
+                        const localProgress = Math.max(0, Math.min(1, (progress - slash.userData.delay * 2) * 3));
+                        slash.scale.set(localProgress * 2, 1 + localProgress, 1);
+                        slash.material.opacity = 0.9 * (1 - localProgress);
+                    });
+                    
+                    return this.life > 0;
+                }
+            };
+        }
+
+        // Tail whip sweep effect
+        function createSweepEffect(x, y, z, direction, color) {
+            const group = new THREE.Group();
+            
+            // Arc sweep
+            const arcGeometry = new THREE.TorusGeometry(2, 0.1, 8, 32, Math.PI);
+            const arcMaterial = new THREE.MeshBasicMaterial({ 
+                color: color,
+                transparent: true,
+                opacity: 0.8
+            });
+            const arc = new THREE.Mesh(arcGeometry, arcMaterial);
+            arc.rotation.x = -Math.PI / 2;
+            arc.rotation.z = direction;
+            group.add(arc);
+            
+            // Trail particles
+            for (let i = 0; i < 10; i++) {
+                const trailGeometry = new THREE.SphereGeometry(0.15, 6, 6);
+                const trailMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                const trail = new THREE.Mesh(trailGeometry, trailMaterial);
+                const angle = (i / 10) * Math.PI + direction;
+                trail.position.set(Math.cos(angle) * 2, 0.5, Math.sin(angle) * 2);
+                group.add(trail);
+            }
+            
+            group.position.set(x, y, z);
+            scene.add(group);
+            
+            return {
+                mesh: group,
+                life: 0.4,
+                update: function(dt) {
+                    this.life -= dt;
+                    const progress = 1 - (this.life / 0.4);
+                    
+                    // Expand and fade arc
+                    group.children[0].scale.set(1 + progress * 0.5, 1 + progress * 0.5, 1);
+                    group.children[0].material.opacity = 0.8 * (1 - progress);
+                    
+                    // Fade trail
+                    for (let i = 1; i < group.children.length; i++) {
+                        group.children[i].material.opacity = 0.6 * (1 - progress);
+                    }
+                    
+                    return this.life > 0;
+                }
+            };
+        }
+
+        // MOO-CLEAR charge up effect
+        function createMooClearChargeEffect(entity) {
+            const group = new THREE.Group();
+            
+            // Multiple rotating rings
+            for (let i = 0; i < 3; i++) {
+                const ringGeometry = new THREE.TorusGeometry(2 + i * 0.5, 0.15, 8, 32);
+                const ringMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xff4400,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.userData = { rotSpeed: 0.05 * (i + 1), axis: i % 2 === 0 ? 'x' : 'z' };
+                group.add(ring);
+            }
+            
+            // Energy orbs gathering
+            for (let i = 0; i < 12; i++) {
+                const orbGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+                const orbMaterial = new THREE.MeshBasicMaterial({ 
+                    color: i % 2 === 0 ? 0xff4400 : 0xffaa00,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const orb = new THREE.Mesh(orbGeometry, orbMaterial);
+                const angle = (i / 12) * Math.PI * 2;
+                orb.userData = { angle, radius: 5, targetRadius: 0.5 };
+                orb.position.set(Math.cos(angle) * 5, 1.5, Math.sin(angle) * 5);
+                group.add(orb);
+            }
+            
+            group.position.set(entity.x, 0, entity.z);
+            scene.add(group);
+            
+            return {
+                mesh: group,
+                entity: entity,
+                life: 1.5,
+                update: function(dt) {
+                    this.life -= dt;
+                    const progress = 1 - (this.life / 1.5);
+                    
+                    // Update position to follow entity
+                    group.position.set(this.entity.x, 0, this.entity.z);
+                    
+                    // Rotate rings
+                    for (let i = 0; i < 3; i++) {
+                        const ring = group.children[i];
+                        if (ring.userData.axis === 'x') {
+                            ring.rotation.x += ring.userData.rotSpeed;
+                        } else {
+                            ring.rotation.z += ring.userData.rotSpeed;
+                        }
+                        ring.rotation.y += 0.02;
+                        // Scale up rings
+                        const scale = 0.5 + progress * 1.5;
+                        ring.scale.set(scale, scale, scale);
+                        ring.material.opacity = 0.7 + progress * 0.3;
+                    }
+                    
+                    // Orbs gathering inward
+                    for (let i = 3; i < group.children.length; i++) {
+                        const orb = group.children[i];
+                        orb.userData.radius = 5 * (1 - progress * 0.9);
+                        orb.userData.angle += 0.1;
+                        orb.position.set(
+                            Math.cos(orb.userData.angle) * orb.userData.radius,
+                            1.5 + Math.sin(orb.userData.angle * 2) * 0.5,
+                            Math.sin(orb.userData.angle) * orb.userData.radius
+                        );
+                        orb.scale.setScalar(1 + progress);
+                    }
+                    
+                    return this.life > 0;
+                }
+            };
+        }
 
         // Create chicken mesh
         function createChickenMesh() {
@@ -495,14 +1033,30 @@
                 this.id = id;
                 this.x = x;
                 this.z = z;
-                this.maxHp = type === 'chicken' ? CHICKEN_HP : COW_HP;
+                
+                // Use ML-balanced stats
+                if (type === 'chicken') {
+                    this.maxHp = getChickenHP();
+                    this.damage = getChickenDamage();
+                    this.speed = getChickenSpeed();
+                } else {
+                    this.maxHp = getCowHP();
+                    this.damage = getCowDamage();
+                    this.speed = getCowSpeed();
+                }
+                
                 this.hp = this.maxHp;
-                this.damage = type === 'chicken' ? CHICKEN_DAMAGE : COW_DAMAGE;
-                this.speed = type === 'chicken' ? CHICKEN_SPEED : COW_SPEED;
                 this.target = null;
                 this.attackCooldown = 0;
                 this.alive = true;
                 this.bobPhase = Math.random() * Math.PI * 2;
+
+                // Special skills
+                this.quickSkillCooldown = 0;  // Quick attack skill
+                this.ultimateCooldown = Math.random() * 5; // Charged ultimate
+                this.isChargingUltimate = false;
+                this.ultimateChargeTime = 0;
+                this.chargingEffect = null;
 
                 this.createMesh();
             }
@@ -529,8 +1083,28 @@
             update() {
                 if (!this.alive) return;
 
-                // Reduce attack cooldown
-                if (this.attackCooldown > 0) this.attackCooldown -= 0.016;
+                const dt = 0.016;
+
+                // Reduce cooldowns
+                if (this.attackCooldown > 0) this.attackCooldown -= dt;
+                if (this.quickSkillCooldown > 0) this.quickSkillCooldown -= dt;
+                if (this.ultimateCooldown > 0) this.ultimateCooldown -= dt;
+
+                // Handle ultimate charging
+                if (this.isChargingUltimate) {
+                    this.ultimateChargeTime += dt;
+                    const chargeNeeded = this.type === 'chicken' ? 2 : 1.5;
+                    
+                    if (this.ultimateChargeTime >= chargeNeeded) {
+                        this.releaseUltimate();
+                    }
+                    
+                    // Slow movement while charging
+                    this.bobPhase += 0.05;
+                    const bobHeight = Math.sin(this.bobPhase) * 0.1 + 0.2;
+                    this.mesh.position.set(this.x, bobHeight, this.z);
+                    return;
+                }
 
                 // Find target
                 const enemies = this.type === 'chicken' ? cows : chickens;
@@ -555,10 +1129,41 @@
                 this.target = nearest;
 
                 const attackRange = this.type === 'chicken' ? 2 : 4;
+                const quickSkillRange = this.type === 'chicken' ? 2.5 : 5;
+                const ultimateRange = this.type === 'chicken' ? 3 : 8;
+
+                // Check for ultimate activation (when multiple enemies nearby for cows, or near a cow for chickens)
+                if (this.ultimateCooldown <= 0 && nearestDist < ultimateRange) {
+                    if (this.type === 'cow') {
+                        // Cow checks if multiple chickens are nearby
+                        const nearbyChickens = chickens.filter(c => {
+                            if (!c.alive) return false;
+                            const dx = c.x - this.x;
+                            const dz = c.z - this.z;
+                            return Math.sqrt(dx * dx + dz * dz) < 10;
+                        }).length;
+                        
+                        if (nearbyChickens >= 5) {
+                            this.startUltimate();
+                            return;
+                        }
+                    } else {
+                        // Chicken has 15% chance to use ultimate when near a cow
+                        if (Math.random() < 0.004) {
+                            this.startUltimate();
+                            return;
+                        }
+                    }
+                }
 
                 if (nearestDist < attackRange) {
-                    // Attack!
-                    if (this.attackCooldown <= 0) {
+                    // Try quick skill first
+                    if (this.quickSkillCooldown <= 0 && Math.random() < 0.3) {
+                        this.useQuickSkill(this.target);
+                        this.quickSkillCooldown = this.type === 'chicken' ? 2.5 : 3;
+                    }
+                    // Normal attack
+                    else if (this.attackCooldown <= 0) {
                         this.attack(this.target);
                         this.attackCooldown = this.type === 'chicken' ? 0.5 : 0.8;
                     }
@@ -591,6 +1196,93 @@
                 this.bobPhase += 0.1;
                 const bobHeight = Math.sin(this.bobPhase) * 0.1;
                 this.mesh.position.set(this.x, bobHeight, this.z);
+            }
+
+            // Quick skill - fast multi-hit attack
+            useQuickSkill(target) {
+                if (this.type === 'chicken') {
+                    // Peck Flurry - 3 quick hits
+                    addLogEntry(`🐔 Chicken #${this.id} uses ⚡PECK FLURRY!`, 'chicken');
+                    skillEffects.push(createQuickAttackEffect(target.x, 1, target.z, 0x00ffff, 3));
+                    
+                    // Deal 3 hits
+                    for (let i = 0; i < 3; i++) {
+                        setTimeout(() => {
+                            if (target.alive && this.alive) {
+                                target.takeDamage(Math.round(this.damage * 0.6), this);
+                            }
+                        }, i * 100);
+                    }
+                } else {
+                    // Tail Whip - sweep attack hitting multiple targets
+                    addLogEntry(`🐄 Cow #${this.id} uses ⚡TAIL WHIP!`, 'cow');
+                    skillEffects.push(createSweepEffect(this.x, 0.5, this.z, this.mesh.rotation.y, 0x00ff00));
+                    
+                    // Hit all chickens in range
+                    chickens.forEach(chicken => {
+                        if (!chicken.alive) return;
+                        const dx = chicken.x - this.x;
+                        const dz = chicken.z - this.z;
+                        const dist = Math.sqrt(dx * dx + dz * dz);
+                        if (dist < 4) {
+                            chicken.takeDamage(Math.round(this.damage * 0.5), this);
+                            // Knockback
+                            const knockback = 2;
+                            chicken.x += (dx / dist) * knockback;
+                            chicken.z += (dz / dist) * knockback;
+                        }
+                    });
+                }
+            }
+
+            // Start charging ultimate
+            startUltimate() {
+                this.isChargingUltimate = true;
+                this.ultimateChargeTime = 0;
+                
+                if (this.type === 'chicken') {
+                    addLogEntry(`🐔 Chicken #${this.id} is charging 💥EGG BOMB!`, 'chicken');
+                    this.chargingEffect = createChargingEffect(this.x, 0.5, this.z, 0xff00ff, 1);
+                } else {
+                    addLogEntry(`🐄 Cow #${this.id} is charging 💥MOO-CLEAR BLAST!`, 'cow');
+                    this.chargingEffect = createMooClearChargeEffect(this);
+                }
+                skillEffects.push(this.chargingEffect);
+            }
+
+            // Release the ultimate attack
+            releaseUltimate() {
+                this.isChargingUltimate = false;
+                this.ultimateCooldown = this.type === 'chicken' ? 10 : 12;
+                
+                // Remove charging effect
+                if (this.chargingEffect) {
+                    this.chargingEffect.life = 0;
+                    this.chargingEffect = null;
+                }
+                
+                if (this.type === 'chicken') {
+                    // Egg Bomb - AOE explosion
+                    addLogEntry(`🐔 Chicken #${this.id} releases 💥EGG BOMB! BOOM!`, 'chicken');
+                    skillEffects.push(createExplosionEffect(this.x, 1, this.z, 0xff00ff, 5, 30, 'chicken'));
+                } else {
+                    // MOO-CLEAR BLAST - Massive AOE
+                    addLogEntry(`🐄 Cow #${this.id} unleashes 💥MOO-CLEAR BLAST! BOOAAAH!`, 'cow');
+                    skillEffects.push(createExplosionEffect(this.x, 1, this.z, 0xff4400, 10, 10, 'cow'));
+                    
+                    // Screen shake effect
+                    const originalPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+                    let shakeTime = 0;
+                    const shakeInterval = setInterval(() => {
+                        shakeTime += 0.05;
+                        if (shakeTime > 0.5) {
+                            clearInterval(shakeInterval);
+                            return;
+                        }
+                        camera.position.x = originalPos.x + (Math.random() - 0.5) * 2;
+                        camera.position.y = originalPos.y + (Math.random() - 0.5) * 2;
+                    }, 50);
+                }
             }
 
             attack(target) {
@@ -709,10 +1401,12 @@
             chickens.forEach(c => { if (c.mesh) scene.remove(c.mesh); });
             cows.forEach(c => { if (c.mesh) scene.remove(c.mesh); });
             particles.forEach(p => scene.remove(p.mesh));
+            skillEffects.forEach(e => scene.remove(e.mesh));
             
             chickens = [];
             cows = [];
             particles = [];
+            skillEffects = [];
             battleActive = true;
             winnerEl.style.display = 'none';
             logEntries.innerHTML = '';
@@ -747,11 +1441,41 @@
                 winnerTextEl.innerHTML = '🐄 COWS WIN! 🐄<br><span style="font-size: 18px;">The mighty cows have prevailed!</span>';
                 winnerEl.style.display = 'block';
                 addLogEntry('🏆 COWS ARE VICTORIOUS!', 'cow');
+                
+                // Record result for ML
+                mlBalance.recordResult('cow');
+                
+                // Handle auto-play
+                handleAutoPlay();
             } else if (aliveCows === 0 && battleActive) {
                 battleActive = false;
                 winnerTextEl.innerHTML = '🐔 CHICKENS WIN! 🐔<br><span style="font-size: 18px;">The chicken army triumphs!</span>';
                 winnerEl.style.display = 'block';
                 addLogEntry('🏆 CHICKENS ARE VICTORIOUS!', 'chicken');
+                
+                // Record result for ML
+                mlBalance.recordResult('chicken');
+                
+                // Handle auto-play
+                handleAutoPlay();
+            }
+        }
+        
+        function handleAutoPlay() {
+            if (autoBalanceRemaining > 0) {
+                autoBalanceRemaining--;
+                if (autoBalanceRemaining > 0) {
+                    setTimeout(() => {
+                        addLogEntry(`🤖 Auto-balance: ${autoBalanceRemaining} battles remaining`, 'chicken');
+                        restartBattle();
+                    }, 500);
+                } else {
+                    addLogEntry('🤖 Auto-balance complete!', 'chicken');
+                }
+            } else if (autoPlayEnabled) {
+                setTimeout(() => {
+                    restartBattle();
+                }, 1500);
             }
         }
 
@@ -808,6 +1532,16 @@
                 }
                 for (const cow of cows) {
                     cow.update();
+                }
+            }
+
+            // Update skill effects
+            for (let i = skillEffects.length - 1; i >= 0; i--) {
+                const effect = skillEffects[i];
+                const alive = effect.update(0.016);
+                if (!alive) {
+                    scene.remove(effect.mesh);
+                    skillEffects.splice(i, 1);
                 }
             }
 
