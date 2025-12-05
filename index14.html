@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Epic Battle: 100 Chickens vs 3 Cows</title>
+    <title>Epic 3D Battle: 100 Chickens vs 3 Cows</title>
     <style>
         * {
             margin: 0;
@@ -13,80 +13,12 @@
 
         body {
             overflow: hidden;
-            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%);
             font-family: 'Arial', sans-serif;
+            background: #000;
         }
 
-        #battlefield {
-            width: 100vw;
-            height: 100vh;
-            position: relative;
-        }
-
-        .entity {
-            position: absolute;
-            cursor: pointer;
-            transition: transform 0.1s;
-            user-select: none;
-        }
-
-        .chicken {
-            font-size: 24px;
-            z-index: 10;
-        }
-
-        .cow {
-            font-size: 48px;
-            z-index: 5;
-        }
-
-        .chicken.attacking {
-            animation: chickenAttack 0.2s ease-in-out;
-        }
-
-        .cow.attacking {
-            animation: cowAttack 0.3s ease-in-out;
-        }
-
-        @keyframes chickenAttack {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.3) rotate(15deg); }
-        }
-
-        @keyframes cowAttack {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.2) rotate(-10deg); }
-        }
-
-        .damage-text {
-            position: absolute;
-            font-weight: bold;
-            font-size: 16px;
-            color: #ff0000;
-            text-shadow: 1px 1px 2px black;
-            animation: floatUp 1s ease-out forwards;
-            pointer-events: none;
-            z-index: 100;
-        }
-
-        @keyframes floatUp {
-            0% { opacity: 1; transform: translateY(0); }
-            100% { opacity: 0; transform: translateY(-40px); }
-        }
-
-        .health-bar {
-            position: absolute;
-            width: 40px;
-            height: 5px;
-            background: #333;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .health-bar-fill {
-            height: 100%;
-            background: #00ff00;
-            transition: width 0.2s, background-color 0.2s;
+        #canvas {
+            display: block;
         }
 
         #stats {
@@ -149,19 +81,6 @@
             background: #ffec8b;
         }
 
-        .explosion {
-            position: absolute;
-            font-size: 30px;
-            animation: explode 0.5s ease-out forwards;
-            pointer-events: none;
-            z-index: 50;
-        }
-
-        @keyframes explode {
-            0% { transform: scale(0); opacity: 1; }
-            100% { transform: scale(2); opacity: 0; }
-        }
-
         #battle-log {
             position: fixed;
             bottom: 20px;
@@ -190,11 +109,25 @@
 
         .log-chicken { background: rgba(255, 204, 0, 0.3); }
         .log-cow { background: rgba(255, 107, 107, 0.3); }
+
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <canvas id="canvas"></canvas>
+    
     <div id="stats">
-        <h1>⚔️ Epic Battle ⚔️</h1>
+        <h1>⚔️ Epic 3D Battle ⚔️</h1>
         <div class="team-stats">
             <div class="chicken-stats">
                 🐔 Chickens: <span id="chicken-count">100</span>
@@ -205,11 +138,13 @@
         </div>
     </div>
 
-    <div id="battlefield"></div>
-
     <div id="battle-log">
         <h3>📜 Battle Log</h3>
         <div id="log-entries"></div>
+    </div>
+
+    <div id="controls">
+        🖱️ Drag to rotate | Scroll to zoom
     </div>
 
     <div id="winner">
@@ -217,33 +152,349 @@
         <button onclick="restartBattle()">🔄 Restart Battle</button>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        const battlefield = document.getElementById('battlefield');
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 40, 60);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(50, 100, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        scene.add(directionalLight);
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(200, 200);
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x4a7c23,
+            roughness: 0.8
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Add some grass tufts
+        for (let i = 0; i < 500; i++) {
+            const grassGeometry = new THREE.ConeGeometry(0.2, 0.5, 4);
+            const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x3d6b1e });
+            const grass = new THREE.Mesh(grassGeometry, grassMaterial);
+            grass.position.set(
+                (Math.random() - 0.5) * 180,
+                0.25,
+                (Math.random() - 0.5) * 180
+            );
+            scene.add(grass);
+        }
+
+        // UI Elements
         const chickenCountEl = document.getElementById('chicken-count');
         const cowCountEl = document.getElementById('cow-count');
         const winnerEl = document.getElementById('winner');
         const winnerTextEl = document.getElementById('winner-text');
         const logEntries = document.getElementById('log-entries');
 
+        // Game state
         let chickens = [];
         let cows = [];
         let battleActive = true;
+        let particles = [];
 
         // Entity stats
         const CHICKEN_HP = 10;
         const CHICKEN_DAMAGE = 2;
-        const CHICKEN_SPEED = 3;
+        const CHICKEN_SPEED = 0.15;
 
         const COW_HP = 150;
         const COW_DAMAGE = 15;
-        const COW_SPEED = 1.5;
+        const COW_SPEED = 0.08;
 
+        const FIELD_SIZE = 80;
+
+        // Create chicken mesh
+        function createChickenMesh() {
+            const group = new THREE.Group();
+
+            // Body
+            const bodyGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            group.add(body);
+
+            // Head
+            const headGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.set(0.3, 0.9, 0);
+            head.castShadow = true;
+            group.add(head);
+
+            // Beak
+            const beakGeometry = new THREE.ConeGeometry(0.1, 0.2, 4);
+            const beakMaterial = new THREE.MeshStandardMaterial({ color: 0xffa500 });
+            const beak = new THREE.Mesh(beakGeometry, beakMaterial);
+            beak.position.set(0.55, 0.85, 0);
+            beak.rotation.z = -Math.PI / 2;
+            group.add(beak);
+
+            // Comb
+            const combGeometry = new THREE.BoxGeometry(0.15, 0.2, 0.05);
+            const combMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+            const comb = new THREE.Mesh(combGeometry, combMaterial);
+            comb.position.set(0.3, 1.15, 0);
+            group.add(comb);
+
+            // Wattle
+            const wattleGeometry = new THREE.SphereGeometry(0.08, 6, 6);
+            const wattleMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+            const wattle = new THREE.Mesh(wattleGeometry, wattleMaterial);
+            wattle.position.set(0.45, 0.7, 0);
+            group.add(wattle);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.3);
+            const legMaterial = new THREE.MeshStandardMaterial({ color: 0xffa500 });
+            
+            const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+            leftLeg.position.set(0, 0.15, 0.15);
+            group.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+            rightLeg.position.set(0, 0.15, -0.15);
+            group.add(rightLeg);
+
+            // Tail feathers
+            const tailGeometry = new THREE.ConeGeometry(0.15, 0.4, 4);
+            const tailMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+            tail.position.set(-0.5, 0.7, 0);
+            tail.rotation.z = Math.PI / 3;
+            group.add(tail);
+
+            // Wings
+            const wingGeometry = new THREE.SphereGeometry(0.25, 6, 6);
+            wingGeometry.scale(1, 0.5, 0.3);
+            const wingMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+            
+            const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
+            leftWing.position.set(0, 0.5, 0.35);
+            group.add(leftWing);
+
+            const rightWing = new THREE.Mesh(wingGeometry, wingMaterial);
+            rightWing.position.set(0, 0.5, -0.35);
+            group.add(rightWing);
+
+            return group;
+        }
+
+        // Create cow mesh
+        function createCowMesh() {
+            const group = new THREE.Group();
+
+            // Body
+            const bodyGeometry = new THREE.BoxGeometry(3, 1.5, 1.5);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1.5;
+            body.castShadow = true;
+            group.add(body);
+
+            // Spots
+            const spotGeometry = new THREE.CircleGeometry(0.3, 8);
+            const spotMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, side: THREE.DoubleSide });
+            
+            for (let i = 0; i < 5; i++) {
+                const spot = new THREE.Mesh(spotGeometry, spotMaterial);
+                spot.position.set(
+                    (Math.random() - 0.5) * 2,
+                    1.5 + (Math.random() - 0.5) * 0.5,
+                    0.76 * (Math.random() > 0.5 ? 1 : -1)
+                );
+                spot.rotation.y = Math.PI / 2 * (spot.position.z > 0 ? 0 : 1);
+                group.add(spot);
+            }
+
+            // Head
+            const headGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.set(1.8, 1.8, 0);
+            head.castShadow = true;
+            group.add(head);
+
+            // Snout
+            const snoutGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.5);
+            const snoutMaterial = new THREE.MeshStandardMaterial({ color: 0xffcccc });
+            const snout = new THREE.Mesh(snoutGeometry, snoutMaterial);
+            snout.position.set(2.2, 1.6, 0);
+            group.add(snout);
+
+            // Nostrils
+            const nostrilGeometry = new THREE.CircleGeometry(0.05, 6);
+            const nostrilMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, side: THREE.DoubleSide });
+            
+            const leftNostril = new THREE.Mesh(nostrilGeometry, nostrilMaterial);
+            leftNostril.position.set(2.41, 1.6, 0.1);
+            leftNostril.rotation.y = Math.PI / 2;
+            group.add(leftNostril);
+
+            const rightNostril = new THREE.Mesh(nostrilGeometry, nostrilMaterial);
+            rightNostril.position.set(2.41, 1.6, -0.1);
+            rightNostril.rotation.y = Math.PI / 2;
+            group.add(rightNostril);
+
+            // Eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.12, 8, 8);
+            const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+            
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(2.1, 2.0, 0.3);
+            group.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(2.1, 2.0, -0.3);
+            group.add(rightEye);
+
+            // Horns
+            const hornGeometry = new THREE.ConeGeometry(0.1, 0.4, 6);
+            const hornMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+            
+            const leftHorn = new THREE.Mesh(hornGeometry, hornMaterial);
+            leftHorn.position.set(1.6, 2.4, 0.3);
+            leftHorn.rotation.z = -0.3;
+            group.add(leftHorn);
+
+            const rightHorn = new THREE.Mesh(hornGeometry, hornMaterial);
+            rightHorn.position.set(1.6, 2.4, -0.3);
+            rightHorn.rotation.z = -0.3;
+            group.add(rightHorn);
+
+            // Ears
+            const earGeometry = new THREE.BoxGeometry(0.2, 0.1, 0.3);
+            const earMaterial = new THREE.MeshStandardMaterial({ color: 0xffcccc });
+            
+            const leftEar = new THREE.Mesh(earGeometry, earMaterial);
+            leftEar.position.set(1.5, 2.0, 0.5);
+            group.add(leftEar);
+
+            const rightEar = new THREE.Mesh(earGeometry, earMaterial);
+            rightEar.position.set(1.5, 2.0, -0.5);
+            group.add(rightEar);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.15, 0.15, 1);
+            const legMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            
+            const positions = [
+                [1, 0.5, 0.5],
+                [1, 0.5, -0.5],
+                [-1, 0.5, 0.5],
+                [-1, 0.5, -0.5]
+            ];
+
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeometry, legMaterial);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                group.add(leg);
+
+                // Hoof
+                const hoofGeometry = new THREE.CylinderGeometry(0.18, 0.18, 0.1);
+                const hoofMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                const hoof = new THREE.Mesh(hoofGeometry, hoofMaterial);
+                hoof.position.set(pos[0], 0.05, pos[2]);
+                group.add(hoof);
+            });
+
+            // Tail
+            const tailGeometry = new THREE.CylinderGeometry(0.05, 0.03, 1);
+            const tailMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+            tail.position.set(-1.8, 1.3, 0);
+            tail.rotation.z = Math.PI / 4;
+            group.add(tail);
+
+            // Tail tuft
+            const tuftGeometry = new THREE.SphereGeometry(0.1, 6, 6);
+            const tuftMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const tuft = new THREE.Mesh(tuftGeometry, tuftMaterial);
+            tuft.position.set(-2.2, 0.8, 0);
+            group.add(tuft);
+
+            // Udder
+            const udderGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const udderMaterial = new THREE.MeshStandardMaterial({ color: 0xffcccc });
+            const udder = new THREE.Mesh(udderGeometry, udderMaterial);
+            udder.position.set(-0.5, 0.7, 0);
+            group.add(udder);
+
+            return group;
+        }
+
+        // Health bar sprite
+        function createHealthBar() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 8;
+            const ctx = canvas.getContext('2d');
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(2, 0.3, 1);
+            
+            return { sprite, canvas, ctx, texture };
+        }
+
+        function updateHealthBar(healthBar, percent) {
+            const { canvas, ctx, texture } = healthBar;
+            ctx.clearRect(0, 0, 64, 8);
+            
+            // Background
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, 64, 8);
+            
+            // Health
+            if (percent > 60) ctx.fillStyle = '#00ff00';
+            else if (percent > 30) ctx.fillStyle = '#ffff00';
+            else ctx.fillStyle = '#ff0000';
+            
+            ctx.fillRect(1, 1, 62 * (percent / 100), 6);
+            
+            texture.needsUpdate = true;
+        }
+
+        // Entity class
         class Entity {
-            constructor(type, x, y, id) {
+            constructor(type, x, z, id) {
                 this.type = type;
                 this.id = id;
                 this.x = x;
-                this.y = y;
+                this.z = z;
                 this.maxHp = type === 'chicken' ? CHICKEN_HP : COW_HP;
                 this.hp = this.maxHp;
                 this.damage = type === 'chicken' ? CHICKEN_DAMAGE : COW_DAMAGE;
@@ -251,39 +502,35 @@
                 this.target = null;
                 this.attackCooldown = 0;
                 this.alive = true;
+                this.bobPhase = Math.random() * Math.PI * 2;
 
-                this.createElement();
+                this.createMesh();
             }
 
-            createElement() {
-                this.element = document.createElement('div');
-                this.element.className = `entity ${this.type}`;
-                this.element.innerHTML = this.type === 'chicken' ? '🐔' : '🐄';
-                this.element.style.left = this.x + 'px';
-                this.element.style.top = this.y + 'px';
+            createMesh() {
+                if (this.type === 'chicken') {
+                    this.mesh = createChickenMesh();
+                    this.mesh.scale.set(0.8, 0.8, 0.8);
+                } else {
+                    this.mesh = createCowMesh();
+                    this.mesh.scale.set(1, 1, 1);
+                }
+                
+                this.mesh.position.set(this.x, 0, this.z);
+                scene.add(this.mesh);
 
                 // Health bar
-                this.healthBar = document.createElement('div');
-                this.healthBar.className = 'health-bar';
-                this.healthBar.style.left = (this.type === 'chicken' ? -8 : -5) + 'px';
-                this.healthBar.style.top = '-10px';
-                if (this.type === 'cow') {
-                    this.healthBar.style.width = '60px';
-                }
-
-                this.healthBarFill = document.createElement('div');
-                this.healthBarFill.className = 'health-bar-fill';
-                this.healthBar.appendChild(this.healthBarFill);
-                this.element.appendChild(this.healthBar);
-
-                battlefield.appendChild(this.element);
+                this.healthBar = createHealthBar();
+                this.healthBar.sprite.position.y = this.type === 'chicken' ? 2 : 3.5;
+                this.mesh.add(this.healthBar.sprite);
+                updateHealthBar(this.healthBar, 100);
             }
 
             update() {
                 if (!this.alive) return;
 
                 // Reduce attack cooldown
-                if (this.attackCooldown > 0) this.attackCooldown--;
+                if (this.attackCooldown > 0) this.attackCooldown -= 0.016;
 
                 // Find target
                 const enemies = this.type === 'chicken' ? cows : chickens;
@@ -297,8 +544,8 @@
 
                 for (const enemy of aliveEnemies) {
                     const dx = enemy.x - this.x;
-                    const dy = enemy.y - this.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const dz = enemy.z - this.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
                     if (dist < nearestDist) {
                         nearestDist = dist;
                         nearest = enemy;
@@ -307,93 +554,78 @@
 
                 this.target = nearest;
 
-                const attackRange = this.type === 'chicken' ? 30 : 50;
+                const attackRange = this.type === 'chicken' ? 2 : 4;
 
                 if (nearestDist < attackRange) {
                     // Attack!
                     if (this.attackCooldown <= 0) {
                         this.attack(this.target);
-                        this.attackCooldown = this.type === 'chicken' ? 30 : 45;
+                        this.attackCooldown = this.type === 'chicken' ? 0.5 : 0.8;
                     }
                 } else {
                     // Move towards target
                     const dx = this.target.x - this.x;
-                    const dy = this.target.y - this.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const dz = this.target.z - this.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
 
                     // Add some randomness to movement
-                    const randomAngle = (Math.random() - 0.5) * 0.5;
+                    const randomAngle = (Math.random() - 0.5) * 0.3;
                     const cos = Math.cos(randomAngle);
                     const sin = Math.sin(randomAngle);
 
-                    const moveX = ((dx / dist) * cos - (dy / dist) * sin) * this.speed;
-                    const moveY = ((dx / dist) * sin + (dy / dist) * cos) * this.speed;
+                    const moveX = ((dx / dist) * cos - (dz / dist) * sin) * this.speed;
+                    const moveZ = ((dx / dist) * sin + (dz / dist) * cos) * this.speed;
 
                     this.x += moveX;
-                    this.y += moveY;
+                    this.z += moveZ;
 
                     // Keep in bounds
-                    this.x = Math.max(20, Math.min(window.innerWidth - 50, this.x));
-                    this.y = Math.max(100, Math.min(window.innerHeight - 50, this.y));
+                    this.x = Math.max(-FIELD_SIZE, Math.min(FIELD_SIZE, this.x));
+                    this.z = Math.max(-FIELD_SIZE, Math.min(FIELD_SIZE, this.z));
+
+                    // Rotate to face direction
+                    this.mesh.rotation.y = Math.atan2(moveX, moveZ);
                 }
 
-                this.render();
+                // Update position with bobbing
+                this.bobPhase += 0.1;
+                const bobHeight = Math.sin(this.bobPhase) * 0.1;
+                this.mesh.position.set(this.x, bobHeight, this.z);
             }
 
             attack(target) {
-                this.element.classList.add('attacking');
-                setTimeout(() => this.element.classList.remove('attacking'), 200);
+                // Attack animation
+                const originalY = this.mesh.position.y;
+                this.mesh.position.y += 0.3;
+                setTimeout(() => {
+                    if (this.mesh) this.mesh.position.y = originalY;
+                }, 100);
 
                 // Apply damage with some variance
                 const damageVariance = 0.8 + Math.random() * 0.4;
                 const actualDamage = Math.round(this.damage * damageVariance);
                 target.takeDamage(actualDamage, this);
+
+                // Create hit particle
+                createHitParticle(target.x, 1, target.z);
             }
 
             takeDamage(amount, attacker) {
                 this.hp -= amount;
-                this.showDamage(amount);
-                this.updateHealthBar();
+                updateHealthBar(this.healthBar, (this.hp / this.maxHp) * 100);
 
                 if (this.hp <= 0) {
                     this.die(attacker);
                 }
             }
 
-            showDamage(amount) {
-                const damageText = document.createElement('div');
-                damageText.className = 'damage-text';
-                damageText.textContent = `-${amount}`;
-                damageText.style.left = (this.x + 10) + 'px';
-                damageText.style.top = (this.y - 10) + 'px';
-                battlefield.appendChild(damageText);
-                setTimeout(() => damageText.remove(), 1000);
-            }
-
-            updateHealthBar() {
-                const percent = Math.max(0, this.hp / this.maxHp) * 100;
-                this.healthBarFill.style.width = percent + '%';
-
-                if (percent > 60) {
-                    this.healthBarFill.style.background = '#00ff00';
-                } else if (percent > 30) {
-                    this.healthBarFill.style.background = '#ffff00';
-                } else {
-                    this.healthBarFill.style.background = '#ff0000';
-                }
-            }
-
             die(killer) {
                 this.alive = false;
 
-                // Explosion effect
-                const explosion = document.createElement('div');
-                explosion.className = 'explosion';
-                explosion.textContent = '💥';
-                explosion.style.left = this.x + 'px';
-                explosion.style.top = this.y + 'px';
-                battlefield.appendChild(explosion);
-                setTimeout(() => explosion.remove(), 500);
+                // Death particles
+                for (let i = 0; i < 10; i++) {
+                    createDeathParticle(this.x, 1, this.z);
+                }
 
                 // Log the death
                 addLogEntry(
@@ -401,18 +633,62 @@
                     this.type
                 );
 
-                this.element.remove();
+                scene.remove(this.mesh);
+                this.mesh = null;
                 updateStats();
             }
+        }
 
-            render() {
-                this.element.style.left = this.x + 'px';
-                this.element.style.top = this.y + 'px';
+        // Particles
+        function createHitParticle(x, y, z) {
+            const geometry = new THREE.SphereGeometry(0.1, 6, 6);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const particle = new THREE.Mesh(geometry, material);
+            particle.position.set(x, y, z);
+            scene.add(particle);
+            
+            particles.push({
+                mesh: particle,
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.2,
+                    Math.random() * 0.2,
+                    (Math.random() - 0.5) * 0.2
+                ),
+                life: 1
+            });
+        }
 
-                // Flip based on movement direction
-                if (this.target) {
-                    const flip = this.target.x < this.x;
-                    this.element.style.transform = flip ? 'scaleX(-1)' : 'scaleX(1)';
+        function createDeathParticle(x, y, z) {
+            const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: Math.random() > 0.5 ? 0xffff00 : 0xff6600 
+            });
+            const particle = new THREE.Mesh(geometry, material);
+            particle.position.set(x, y, z);
+            scene.add(particle);
+            
+            particles.push({
+                mesh: particle,
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.3,
+                    Math.random() * 0.3 + 0.1,
+                    (Math.random() - 0.5) * 0.3
+                ),
+                life: 1.5
+            });
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.mesh.position.add(p.velocity);
+                p.velocity.y -= 0.01; // gravity
+                p.life -= 0.02;
+                p.mesh.scale.multiplyScalar(0.98);
+                
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
                 }
             }
         }
@@ -423,7 +699,6 @@
             entry.textContent = text;
             logEntries.insertBefore(entry, logEntries.firstChild);
 
-            // Keep only last 20 entries
             while (logEntries.children.length > 20) {
                 logEntries.removeChild(logEntries.lastChild);
             }
@@ -431,25 +706,29 @@
 
         function initBattle() {
             // Clear existing
-            battlefield.innerHTML = '';
+            chickens.forEach(c => { if (c.mesh) scene.remove(c.mesh); });
+            cows.forEach(c => { if (c.mesh) scene.remove(c.mesh); });
+            particles.forEach(p => scene.remove(p.mesh));
+            
             chickens = [];
             cows = [];
+            particles = [];
             battleActive = true;
             winnerEl.style.display = 'none';
             logEntries.innerHTML = '';
 
             // Create chickens on the left side
             for (let i = 0; i < 100; i++) {
-                const x = 50 + Math.random() * (window.innerWidth * 0.3);
-                const y = 120 + Math.random() * (window.innerHeight - 180);
-                chickens.push(new Entity('chicken', x, y, i + 1));
+                const x = -FIELD_SIZE + Math.random() * 30;
+                const z = (Math.random() - 0.5) * FIELD_SIZE * 1.5;
+                chickens.push(new Entity('chicken', x, z, i + 1));
             }
 
             // Create cows on the right side
             for (let i = 0; i < 3; i++) {
-                const x = window.innerWidth * 0.7 + Math.random() * (window.innerWidth * 0.2);
-                const y = 150 + (window.innerHeight - 300) * (i / 2);
-                cows.push(new Entity('cow', x, y, i + 1));
+                const x = FIELD_SIZE - 20 + Math.random() * 15;
+                const z = (i - 1) * 20;
+                cows.push(new Entity('cow', x, z, i + 1));
             }
 
             addLogEntry('⚔️ Battle has begun! 100 Chickens vs 3 Cows!', 'chicken');
@@ -463,7 +742,6 @@
             chickenCountEl.textContent = aliveChickens;
             cowCountEl.textContent = aliveCows;
 
-            // Check for winner
             if (aliveChickens === 0 && battleActive) {
                 battleActive = false;
                 winnerTextEl.innerHTML = '🐄 COWS WIN! 🐄<br><span style="font-size: 18px;">The mighty cows have prevailed!</span>';
@@ -477,7 +755,53 @@
             }
         }
 
-        function gameLoop() {
+        function restartBattle() {
+            initBattle();
+        }
+
+        // Camera controls
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let cameraAngle = 0;
+        let cameraHeight = 40;
+        let cameraDistance = 70;
+
+        document.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+            
+            cameraAngle += deltaX * 0.01;
+            cameraHeight = Math.max(10, Math.min(100, cameraHeight - deltaY * 0.2));
+            
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        document.addEventListener('wheel', (e) => {
+            cameraDistance = Math.max(30, Math.min(150, cameraDistance + e.deltaY * 0.05));
+        });
+
+        function updateCamera() {
+            camera.position.x = Math.sin(cameraAngle) * cameraDistance;
+            camera.position.z = Math.cos(cameraAngle) * cameraDistance;
+            camera.position.y = cameraHeight;
+            camera.lookAt(0, 0, 0);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
             if (battleActive) {
                 for (const chicken of chickens) {
                     chicken.update();
@@ -486,33 +810,22 @@
                     cow.update();
                 }
             }
-            requestAnimationFrame(gameLoop);
-        }
 
-        function restartBattle() {
-            initBattle();
+            updateParticles();
+            updateCamera();
+            renderer.render(scene, camera);
         }
-
-        // Start the battle!
-        initBattle();
-        gameLoop();
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            // Keep entities in bounds
-            for (const chicken of chickens) {
-                if (chicken.alive) {
-                    chicken.x = Math.min(chicken.x, window.innerWidth - 50);
-                    chicken.y = Math.min(chicken.y, window.innerHeight - 50);
-                }
-            }
-            for (const cow of cows) {
-                if (cow.alive) {
-                    cow.x = Math.min(cow.x, window.innerWidth - 50);
-                    cow.y = Math.min(cow.y, window.innerHeight - 50);
-                }
-            }
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         });
+
+        // Start
+        initBattle();
+        animate();
     </script>
 </body>
 </html>
