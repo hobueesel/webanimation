@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epic Battle: 100 Chickens vs 3 Cows</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%);
+            font-family: 'Arial', sans-serif;
+        }
+
+        #battlefield {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        .entity {
+            position: absolute;
+            cursor: pointer;
+            transition: transform 0.1s;
+            user-select: none;
+        }
+
+        .chicken {
+            font-size: 24px;
+            z-index: 10;
+        }
+
+        .cow {
+            font-size: 48px;
+            z-index: 5;
+        }
+
+        .chicken.attacking {
+            animation: chickenAttack 0.2s ease-in-out;
+        }
+
+        .cow.attacking {
+            animation: cowAttack 0.3s ease-in-out;
+        }
+
+        @keyframes chickenAttack {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3) rotate(15deg); }
+        }
+
+        @keyframes cowAttack {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2) rotate(-10deg); }
+        }
+
+        .damage-text {
+            position: absolute;
+            font-weight: bold;
+            font-size: 16px;
+            color: #ff0000;
+            text-shadow: 1px 1px 2px black;
+            animation: floatUp 1s ease-out forwards;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-40px); }
+        }
+
+        .health-bar {
+            position: absolute;
+            width: 40px;
+            height: 5px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .health-bar-fill {
+            height: 100%;
+            background: #00ff00;
+            transition: width 0.2s, background-color 0.2s;
+        }
+
+        #stats {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 1000;
+            font-size: 18px;
+        }
+
+        #stats h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+
+        .team-stats {
+            display: flex;
+            justify-content: space-around;
+            gap: 40px;
+        }
+
+        .chicken-stats { color: #ffcc00; }
+        .cow-stats { color: #ff6b6b; }
+
+        #winner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #ffd700;
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 2000;
+            display: none;
+            font-size: 32px;
+            border: 3px solid #ffd700;
+        }
+
+        #winner button {
+            margin-top: 20px;
+            padding: 15px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            background: #ffd700;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        #winner button:hover {
+            background: #ffec8b;
+        }
+
+        .explosion {
+            position: absolute;
+            font-size: 30px;
+            animation: explode 0.5s ease-out forwards;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        @keyframes explode {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+
+        #battle-log {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 200px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            overflow-y: auto;
+            font-size: 12px;
+            z-index: 1000;
+        }
+
+        #battle-log h3 {
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+
+        .log-entry {
+            margin: 3px 0;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .log-chicken { background: rgba(255, 204, 0, 0.3); }
+        .log-cow { background: rgba(255, 107, 107, 0.3); }
+    </style>
+</head>
+<body>
+    <div id="stats">
+        <h1>⚔️ Epic Battle ⚔️</h1>
+        <div class="team-stats">
+            <div class="chicken-stats">
+                🐔 Chickens: <span id="chicken-count">100</span>
+            </div>
+            <div class="cow-stats">
+                🐄 Cows: <span id="cow-count">3</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="battlefield"></div>
+
+    <div id="battle-log">
+        <h3>📜 Battle Log</h3>
+        <div id="log-entries"></div>
+    </div>
+
+    <div id="winner">
+        <div id="winner-text"></div>
+        <button onclick="restartBattle()">🔄 Restart Battle</button>
+    </div>
+
+    <script>
+        const battlefield = document.getElementById('battlefield');
+        const chickenCountEl = document.getElementById('chicken-count');
+        const cowCountEl = document.getElementById('cow-count');
+        const winnerEl = document.getElementById('winner');
+        const winnerTextEl = document.getElementById('winner-text');
+        const logEntries = document.getElementById('log-entries');
+
+        let chickens = [];
+        let cows = [];
+        let battleActive = true;
+
+        // Entity stats
+        const CHICKEN_HP = 10;
+        const CHICKEN_DAMAGE = 2;
+        const CHICKEN_SPEED = 3;
+
+        const COW_HP = 150;
+        const COW_DAMAGE = 15;
+        const COW_SPEED = 1.5;
+
+        class Entity {
+            constructor(type, x, y, id) {
+                this.type = type;
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.maxHp = type === 'chicken' ? CHICKEN_HP : COW_HP;
+                this.hp = this.maxHp;
+                this.damage = type === 'chicken' ? CHICKEN_DAMAGE : COW_DAMAGE;
+                this.speed = type === 'chicken' ? CHICKEN_SPEED : COW_SPEED;
+                this.target = null;
+                this.attackCooldown = 0;
+                this.alive = true;
+
+                this.createElement();
+            }
+
+            createElement() {
+                this.element = document.createElement('div');
+                this.element.className = `entity ${this.type}`;
+                this.element.innerHTML = this.type === 'chicken' ? '🐔' : '🐄';
+                this.element.style.left = this.x + 'px';
+                this.element.style.top = this.y + 'px';
+
+                // Health bar
+                this.healthBar = document.createElement('div');
+                this.healthBar.className = 'health-bar';
+                this.healthBar.style.left = (this.type === 'chicken' ? -8 : -5) + 'px';
+                this.healthBar.style.top = '-10px';
+                if (this.type === 'cow') {
+                    this.healthBar.style.width = '60px';
+                }
+
+                this.healthBarFill = document.createElement('div');
+                this.healthBarFill.className = 'health-bar-fill';
+                this.healthBar.appendChild(this.healthBarFill);
+                this.element.appendChild(this.healthBar);
+
+                battlefield.appendChild(this.element);
+            }
+
+            update() {
+                if (!this.alive) return;
+
+                // Reduce attack cooldown
+                if (this.attackCooldown > 0) this.attackCooldown--;
+
+                // Find target
+                const enemies = this.type === 'chicken' ? cows : chickens;
+                const aliveEnemies = enemies.filter(e => e.alive);
+
+                if (aliveEnemies.length === 0) return;
+
+                // Find nearest enemy
+                let nearest = null;
+                let nearestDist = Infinity;
+
+                for (const enemy of aliveEnemies) {
+                    const dx = enemy.x - this.x;
+                    const dy = enemy.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearest = enemy;
+                    }
+                }
+
+                this.target = nearest;
+
+                const attackRange = this.type === 'chicken' ? 30 : 50;
+
+                if (nearestDist < attackRange) {
+                    // Attack!
+                    if (this.attackCooldown <= 0) {
+                        this.attack(this.target);
+                        this.attackCooldown = this.type === 'chicken' ? 30 : 45;
+                    }
+                } else {
+                    // Move towards target
+                    const dx = this.target.x - this.x;
+                    const dy = this.target.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    // Add some randomness to movement
+                    const randomAngle = (Math.random() - 0.5) * 0.5;
+                    const cos = Math.cos(randomAngle);
+                    const sin = Math.sin(randomAngle);
+
+                    const moveX = ((dx / dist) * cos - (dy / dist) * sin) * this.speed;
+                    const moveY = ((dx / dist) * sin + (dy / dist) * cos) * this.speed;
+
+                    this.x += moveX;
+                    this.y += moveY;
+
+                    // Keep in bounds
+                    this.x = Math.max(20, Math.min(window.innerWidth - 50, this.x));
+                    this.y = Math.max(100, Math.min(window.innerHeight - 50, this.y));
+                }
+
+                this.render();
+            }
+
+            attack(target) {
+                this.element.classList.add('attacking');
+                setTimeout(() => this.element.classList.remove('attacking'), 200);
+
+                // Apply damage with some variance
+                const damageVariance = 0.8 + Math.random() * 0.4;
+                const actualDamage = Math.round(this.damage * damageVariance);
+                target.takeDamage(actualDamage, this);
+            }
+
+            takeDamage(amount, attacker) {
+                this.hp -= amount;
+                this.showDamage(amount);
+                this.updateHealthBar();
+
+                if (this.hp <= 0) {
+                    this.die(attacker);
+                }
+            }
+
+            showDamage(amount) {
+                const damageText = document.createElement('div');
+                damageText.className = 'damage-text';
+                damageText.textContent = `-${amount}`;
+                damageText.style.left = (this.x + 10) + 'px';
+                damageText.style.top = (this.y - 10) + 'px';
+                battlefield.appendChild(damageText);
+                setTimeout(() => damageText.remove(), 1000);
+            }
+
+            updateHealthBar() {
+                const percent = Math.max(0, this.hp / this.maxHp) * 100;
+                this.healthBarFill.style.width = percent + '%';
+
+                if (percent > 60) {
+                    this.healthBarFill.style.background = '#00ff00';
+                } else if (percent > 30) {
+                    this.healthBarFill.style.background = '#ffff00';
+                } else {
+                    this.healthBarFill.style.background = '#ff0000';
+                }
+            }
+
+            die(killer) {
+                this.alive = false;
+
+                // Explosion effect
+                const explosion = document.createElement('div');
+                explosion.className = 'explosion';
+                explosion.textContent = '💥';
+                explosion.style.left = this.x + 'px';
+                explosion.style.top = this.y + 'px';
+                battlefield.appendChild(explosion);
+                setTimeout(() => explosion.remove(), 500);
+
+                // Log the death
+                addLogEntry(
+                    `${this.type === 'chicken' ? '🐔' : '🐄'} ${this.type.charAt(0).toUpperCase() + this.type.slice(1)} #${this.id} was defeated!`,
+                    this.type
+                );
+
+                this.element.remove();
+                updateStats();
+            }
+
+            render() {
+                this.element.style.left = this.x + 'px';
+                this.element.style.top = this.y + 'px';
+
+                // Flip based on movement direction
+                if (this.target) {
+                    const flip = this.target.x < this.x;
+                    this.element.style.transform = flip ? 'scaleX(-1)' : 'scaleX(1)';
+                }
+            }
+        }
+
+        function addLogEntry(text, type) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = text;
+            logEntries.insertBefore(entry, logEntries.firstChild);
+
+            // Keep only last 20 entries
+            while (logEntries.children.length > 20) {
+                logEntries.removeChild(logEntries.lastChild);
+            }
+        }
+
+        function initBattle() {
+            // Clear existing
+            battlefield.innerHTML = '';
+            chickens = [];
+            cows = [];
+            battleActive = true;
+            winnerEl.style.display = 'none';
+            logEntries.innerHTML = '';
+
+            // Create chickens on the left side
+            for (let i = 0; i < 100; i++) {
+                const x = 50 + Math.random() * (window.innerWidth * 0.3);
+                const y = 120 + Math.random() * (window.innerHeight - 180);
+                chickens.push(new Entity('chicken', x, y, i + 1));
+            }
+
+            // Create cows on the right side
+            for (let i = 0; i < 3; i++) {
+                const x = window.innerWidth * 0.7 + Math.random() * (window.innerWidth * 0.2);
+                const y = 150 + (window.innerHeight - 300) * (i / 2);
+                cows.push(new Entity('cow', x, y, i + 1));
+            }
+
+            addLogEntry('⚔️ Battle has begun! 100 Chickens vs 3 Cows!', 'chicken');
+            updateStats();
+        }
+
+        function updateStats() {
+            const aliveChickens = chickens.filter(c => c.alive).length;
+            const aliveCows = cows.filter(c => c.alive).length;
+
+            chickenCountEl.textContent = aliveChickens;
+            cowCountEl.textContent = aliveCows;
+
+            // Check for winner
+            if (aliveChickens === 0 && battleActive) {
+                battleActive = false;
+                winnerTextEl.innerHTML = '🐄 COWS WIN! 🐄<br><span style="font-size: 18px;">The mighty cows have prevailed!</span>';
+                winnerEl.style.display = 'block';
+                addLogEntry('🏆 COWS ARE VICTORIOUS!', 'cow');
+            } else if (aliveCows === 0 && battleActive) {
+                battleActive = false;
+                winnerTextEl.innerHTML = '🐔 CHICKENS WIN! 🐔<br><span style="font-size: 18px;">The chicken army triumphs!</span>';
+                winnerEl.style.display = 'block';
+                addLogEntry('🏆 CHICKENS ARE VICTORIOUS!', 'chicken');
+            }
+        }
+
+        function gameLoop() {
+            if (battleActive) {
+                for (const chicken of chickens) {
+                    chicken.update();
+                }
+                for (const cow of cows) {
+                    cow.update();
+                }
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function restartBattle() {
+            initBattle();
+        }
+
+        // Start the battle!
+        initBattle();
+        gameLoop();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            // Keep entities in bounds
+            for (const chicken of chickens) {
+                if (chicken.alive) {
+                    chicken.x = Math.min(chicken.x, window.innerWidth - 50);
+                    chicken.y = Math.min(chicken.y, window.innerHeight - 50);
+                }
+            }
+            for (const cow of cows) {
+                if (cow.alive) {
+                    cow.x = Math.min(cow.x, window.innerWidth - 50);
+                    cow.y = Math.min(cow.y, window.innerHeight - 50);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

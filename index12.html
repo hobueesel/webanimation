@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Index12 - Fish Ocean in Space</title>
+  <title>Index12 - Jellyfish Galaxy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
       margin:0;
       min-height:100vh;
       font-family:'Space Grotesk',"Trebuchet MS",sans-serif;
-      background:radial-gradient(circle at 20% 20%,#0a1a2a 0%,#030812 55%,#010205 100%);
+      background:radial-gradient(circle at 20% 20%,#05101a 0%,#020610 55%,#010103 100%);
       color:#f7f9ff;
       overflow:hidden;
     }
@@ -86,18 +86,18 @@
 <body>
   <canvas id="universe"></canvas>
   <section class="overlay">
-    <h1>🐟 Cosmic Aquarium</h1>
-    <p>Drag to swim around, scroll to dive deeper. Watch the cosmic fish drift through the stellar ocean!</p>
+    <h1>🪼 Jellyfish Galaxy</h1>
+    <p>Drag to drift through the cosmos, scroll to float closer. Watch the cosmic jellyfish pulse through the stellar deep!</p>
     <ul class="legend">
-      <li><span class="chip" style="--tone:#f8c56d"></span>Sunfish</li>
-      <li><span class="chip" style="--tone:#c5b199"></span>Mercury Minnow</li>
-      <li><span class="chip" style="--tone:#f5a971"></span>Venus Goldfish</li>
-      <li><span class="chip" style="--tone:#5eb7ff"></span>Earth Bluefish</li>
-      <li><span class="chip" style="--tone:#f16b5b"></span>Mars Redfish</li>
-      <li><span class="chip" style="--tone:#efd08a"></span>Jupiter Whale</li>
-      <li><span class="chip" style="--tone:#d9b578"></span>Saturn Angelfish</li>
-      <li><span class="chip" style="--tone:#74f0d4"></span>Uranus Tetra</li>
-      <li><span class="chip" style="--tone:#60a8ff"></span>Neptune Betta</li>
+      <li><span class="chip" style="--tone:#f8c56d"></span>Sun Jelly</li>
+      <li><span class="chip" style="--tone:#c5b199"></span>Mercury Moon</li>
+      <li><span class="chip" style="--tone:#f5a971"></span>Venus Bloom</li>
+      <li><span class="chip" style="--tone:#5eb7ff"></span>Earth Drift</li>
+      <li><span class="chip" style="--tone:#f16b5b"></span>Mars Pulse</li>
+      <li><span class="chip" style="--tone:#efd08a"></span>Jupiter Giant</li>
+      <li><span class="chip" style="--tone:#d9b578"></span>Saturn Bell</li>
+      <li><span class="chip" style="--tone:#74f0d4"></span>Uranus Glow</li>
+      <li><span class="chip" style="--tone:#60a8ff"></span>Neptune Deep</li>
     </ul>
   </section>
   <script type="importmap">
@@ -144,215 +144,316 @@
     const COMET_MAX_DISTANCE = 700;
     const PLANET_TRAIL_SEGMENTS = 220;
 
-    // Create fish geometry
-    function createFishGeometry(scale = 1, detail = 1) {
-      const shape = new THREE.Shape();
-      
-      // Fish body outline
-      shape.moveTo(0, 0);
-      shape.quadraticCurveTo(0.6 * scale, 0.4 * scale, 1.2 * scale, 0);
-      shape.quadraticCurveTo(1.4 * scale, -0.15 * scale, 1.6 * scale, -0.3 * scale);
-      shape.lineTo(2 * scale, 0);
-      shape.lineTo(1.6 * scale, 0.3 * scale);
-      shape.quadraticCurveTo(1.4 * scale, 0.15 * scale, 1.2 * scale, 0);
-      shape.quadraticCurveTo(0.6 * scale, -0.4 * scale, 0, 0);
+    // Store all jellyfish for tentacle animation
+    const allJellyfish = [];
 
-      const extrudeSettings = {
-        steps: 1,
-        depth: 0.3 * scale,
-        bevelEnabled: true,
-        bevelThickness: 0.15 * scale,
-        bevelSize: 0.1 * scale,
-        bevelSegments: Math.ceil(3 * detail)
-      };
-
-      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-      geometry.center();
-      geometry.rotateY(Math.PI / 2);
-      return geometry;
-    }
-
-    // Create a more detailed 3D fish mesh
-    function createFishMesh(size, color, emissiveIntensity = 0.6) {
+    // Create a jellyfish mesh with transparent bell and dangling tentacles
+    function createJellyfishMesh(size, color, emissiveIntensity = 0.8, numTentacles = 8) {
       const group = new THREE.Group();
       const baseColor = new THREE.Color(color);
-      const emissiveColor = baseColor.clone().multiplyScalar(0.55);
+      const emissiveColor = baseColor.clone().multiplyScalar(0.7);
 
-      // Body (elongated ellipsoid)
-      const bodyGeom = new THREE.SphereGeometry(size, 32, 24);
-      bodyGeom.scale(1.8, 0.7, 0.5);
-      const bodyMat = new THREE.MeshPhysicalMaterial({
+      // Bell (dome shape) - the main body
+      const bellGeom = new THREE.SphereGeometry(size, 32, 24, 0, Math.PI * 2, 0, Math.PI * 0.6);
+      const bellMat = new THREE.MeshPhysicalMaterial({
         color: baseColor,
-        roughness: 0.3,
-        metalness: 0.15,
+        roughness: 0.1,
+        metalness: 0.0,
         emissive: emissiveColor,
         emissiveIntensity: emissiveIntensity,
-        clearcoat: 0.5,
-        clearcoatRoughness: 0.3
-      });
-      const body = new THREE.Mesh(bodyGeom, bodyMat);
-      group.add(body);
-
-      // Head (slightly larger front)
-      const headGeom = new THREE.SphereGeometry(size * 0.6, 24, 18);
-      headGeom.scale(0.8, 0.9, 0.8);
-      const headMat = bodyMat.clone();
-      const head = new THREE.Mesh(headGeom, headMat);
-      head.position.x = size * 1.2;
-      group.add(head);
-
-      // Tail fin
-      const tailShape = new THREE.Shape();
-      tailShape.moveTo(0, 0);
-      tailShape.lineTo(-size * 0.8, size * 0.6);
-      tailShape.quadraticCurveTo(-size * 0.5, 0, -size * 0.8, -size * 0.6);
-      tailShape.lineTo(0, 0);
-      
-      const tailGeom = new THREE.ExtrudeGeometry(tailShape, {
-        depth: size * 0.1,
-        bevelEnabled: true,
-        bevelThickness: size * 0.02,
-        bevelSize: size * 0.02,
-        bevelSegments: 2
-      });
-      const tailMat = new THREE.MeshPhysicalMaterial({
-        color: baseColor.clone().multiplyScalar(0.8),
-        roughness: 0.4,
-        metalness: 0.1,
-        emissive: emissiveColor,
-        emissiveIntensity: emissiveIntensity * 0.7,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.45,
+        transmission: 0.6,
+        thickness: 1.5,
+        clearcoat: 1,
+        clearcoatRoughness: 0.1,
+        side: THREE.DoubleSide,
+        envMapIntensity: 1.5
+      });
+      const bell = new THREE.Mesh(bellGeom, bellMat);
+      bell.rotation.x = Math.PI;
+      group.add(bell);
+
+      // Inner bell (slightly smaller, more opaque core)
+      const innerBellGeom = new THREE.SphereGeometry(size * 0.7, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.5);
+      const innerBellMat = new THREE.MeshPhysicalMaterial({
+        color: baseColor.clone().lerp(new THREE.Color(0xffffff), 0.3),
+        roughness: 0.2,
+        emissive: emissiveColor,
+        emissiveIntensity: emissiveIntensity * 1.5,
+        transparent: true,
+        opacity: 0.35,
         side: THREE.DoubleSide
       });
-      const tail = new THREE.Mesh(tailGeom, tailMat);
-      tail.position.set(-size * 1.5, 0, -size * 0.05);
-      tail.rotation.y = Math.PI;
-      group.add(tail);
+      const innerBell = new THREE.Mesh(innerBellGeom, innerBellMat);
+      innerBell.rotation.x = Math.PI;
+      innerBell.position.y = size * 0.15;
+      group.add(innerBell);
 
-      // Dorsal fin
-      const dorsalShape = new THREE.Shape();
-      dorsalShape.moveTo(0, 0);
-      dorsalShape.quadraticCurveTo(size * 0.3, size * 0.5, size * 0.6, 0);
-      dorsalShape.lineTo(0, 0);
-      
-      const dorsalGeom = new THREE.ExtrudeGeometry(dorsalShape, {
-        depth: size * 0.05,
-        bevelEnabled: false
+      // Frilly edge around bell
+      const frillyGeom = new THREE.TorusGeometry(size * 0.85, size * 0.12, 8, 32);
+      const frillyMat = new THREE.MeshPhysicalMaterial({
+        color: baseColor.clone().lerp(new THREE.Color(0xffffff), 0.4),
+        roughness: 0.3,
+        emissive: emissiveColor,
+        emissiveIntensity: emissiveIntensity * 0.8,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
       });
-      const dorsal = new THREE.Mesh(dorsalGeom, tailMat);
-      dorsal.position.set(-size * 0.1, size * 0.35, -size * 0.025);
-      dorsal.rotation.z = -0.2;
-      group.add(dorsal);
+      const frilly = new THREE.Mesh(frillyGeom, frillyMat);
+      frilly.rotation.x = Math.PI / 2;
+      frilly.position.y = -size * 0.45;
+      group.add(frilly);
 
-      // Side fins
-      const finShape = new THREE.Shape();
-      finShape.moveTo(0, 0);
-      finShape.quadraticCurveTo(size * 0.3, -size * 0.15, size * 0.5, -size * 0.3);
-      finShape.quadraticCurveTo(size * 0.2, -size * 0.1, 0, 0);
-      
-      const finGeom = new THREE.ExtrudeGeometry(finShape, {
-        depth: size * 0.02,
-        bevelEnabled: false
-      });
-      
-      const leftFin = new THREE.Mesh(finGeom, tailMat);
-      leftFin.position.set(size * 0.3, -size * 0.1, size * 0.25);
-      leftFin.rotation.x = -0.3;
-      group.add(leftFin);
-      
-      const rightFin = new THREE.Mesh(finGeom, tailMat);
-      rightFin.position.set(size * 0.3, -size * 0.1, -size * 0.25);
-      rightFin.rotation.x = 0.3;
-      rightFin.scale.z = -1;
-      group.add(rightFin);
+      // Tentacles group
+      const tentaclesGroup = new THREE.Group();
+      tentaclesGroup.position.y = -size * 0.5;
+      group.add(tentaclesGroup);
 
-      // Eyes
-      const eyeGeom = new THREE.SphereGeometry(size * 0.12, 16, 16);
-      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-      const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const tentacles = [];
       
-      const eyeWhiteGeom = new THREE.SphereGeometry(size * 0.15, 16, 16);
+      // Create wavy tentacles using tube geometry
+      for (let i = 0; i < numTentacles; i++) {
+        const angle = (i / numTentacles) * Math.PI * 2;
+        const radius = size * 0.6;
+        const startX = Math.cos(angle) * radius;
+        const startZ = Math.sin(angle) * radius;
+        
+        // Create a curved path for the tentacle
+        const tentacleLength = size * (2.5 + Math.random() * 1.5);
+        const segments = 12;
+        const points = [];
+        
+        for (let j = 0; j <= segments; j++) {
+          const t = j / segments;
+          const y = -t * tentacleLength;
+          const wave = Math.sin(t * Math.PI * 2) * size * 0.3;
+          points.push(new THREE.Vector3(
+            startX + wave * Math.cos(angle + Math.PI / 2),
+            y,
+            startZ + wave * Math.sin(angle + Math.PI / 2)
+          ));
+        }
+        
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tentacleGeom = new THREE.TubeGeometry(curve, 20, size * 0.06 * (1 - 0.3 * Math.random()), 8, false);
+        const tentacleMat = new THREE.MeshPhysicalMaterial({
+          color: baseColor.clone().lerp(new THREE.Color(0xffffff), 0.2),
+          roughness: 0.3,
+          emissive: emissiveColor,
+          emissiveIntensity: emissiveIntensity * 0.6,
+          transparent: true,
+          opacity: 0.4,
+          side: THREE.DoubleSide
+        });
+        const tentacle = new THREE.Mesh(tentacleGeom, tentacleMat);
+        tentaclesGroup.add(tentacle);
+        
+        tentacles.push({
+          mesh: tentacle,
+          basePoints: points.map(p => p.clone()),
+          angle: angle,
+          length: tentacleLength,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.8 + Math.random() * 0.4
+        });
+      }
+
+      // Short frilly oral arms near center
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + Math.PI / 8;
+        const armLength = size * 1.2;
+        const points = [];
+        
+        for (let j = 0; j <= 8; j++) {
+          const t = j / 8;
+          points.push(new THREE.Vector3(
+            Math.cos(angle) * size * 0.2 * (1 + t * 0.5),
+            -t * armLength,
+            Math.sin(angle) * size * 0.2 * (1 + t * 0.5)
+          ));
+        }
+        
+        const curve = new THREE.CatmullRomCurve3(points);
+        const armGeom = new THREE.TubeGeometry(curve, 12, size * 0.1, 6, false);
+        const armMat = new THREE.MeshPhysicalMaterial({
+          color: baseColor.clone().lerp(new THREE.Color(0xffffff), 0.5),
+          roughness: 0.2,
+          emissive: emissiveColor,
+          emissiveIntensity: emissiveIntensity,
+          transparent: true,
+          opacity: 0.55
+        });
+        const arm = new THREE.Mesh(armGeom, armMat);
+        tentaclesGroup.add(arm);
+        
+        tentacles.push({
+          mesh: arm,
+          basePoints: points.map(p => p.clone()),
+          angle: angle,
+          length: armLength,
+          phase: Math.random() * Math.PI * 2,
+          speed: 1.2 + Math.random() * 0.3,
+          isArm: true
+        });
+      }
+
+      // Store tentacle data for animation
+      group.userData.tentacles = tentacles;
+      group.userData.tentaclesGroup = tentaclesGroup;
+      group.userData.bell = bell;
+      group.userData.pulsePhase = Math.random() * Math.PI * 2;
       
-      const leftEyeWhite = new THREE.Mesh(eyeWhiteGeom, eyeWhiteMat);
-      leftEyeWhite.position.set(size * 1.3, size * 0.15, size * 0.2);
-      group.add(leftEyeWhite);
-      
-      const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
-      leftEye.position.set(size * 1.4, size * 0.15, size * 0.25);
-      group.add(leftEye);
-      
-      const rightEyeWhite = new THREE.Mesh(eyeWhiteGeom, eyeWhiteMat);
-      rightEyeWhite.position.set(size * 1.3, size * 0.15, -size * 0.2);
-      group.add(rightEyeWhite);
-      
-      const rightEye = new THREE.Mesh(eyeGeom, eyeMat);
-      rightEye.position.set(size * 1.4, size * 0.15, -size * 0.25);
-      group.add(rightEye);
+      allJellyfish.push(group);
 
       return group;
     }
 
-    // Create comet fish (smaller, more streamlined)
-    function createCometFish(size = 1.4) {
+    // Create comet jellyfish (smaller, trailing)
+    function createCometJellyfish(size = 1.4) {
       const group = new THREE.Group();
       
-      // Streamlined body
-      const bodyGeom = new THREE.SphereGeometry(size, 24, 18);
-      bodyGeom.scale(2, 0.5, 0.4);
-      const bodyMat = new THREE.MeshPhysicalMaterial({
+      // Small translucent bell
+      const bellGeom = new THREE.SphereGeometry(size, 20, 16, 0, Math.PI * 2, 0, Math.PI * 0.55);
+      const bellMat = new THREE.MeshPhysicalMaterial({
         color: 0xd8f7ff,
         emissive: 0x9fdfff,
-        emissiveIntensity: 2.2,
-        roughness: 0.2,
-        transmission: 0.65,
-        thickness: 0.8,
-        clearcoat: 1
-      });
-      const body = new THREE.Mesh(bodyGeom, bodyMat);
-      group.add(body);
-
-      // Flowing tail
-      const tailShape = new THREE.Shape();
-      tailShape.moveTo(0, 0);
-      tailShape.bezierCurveTo(-size, size * 0.8, -size * 1.5, size * 0.3, -size * 2, size * 0.5);
-      tailShape.lineTo(-size * 2.2, 0);
-      tailShape.lineTo(-size * 2, -size * 0.5);
-      tailShape.bezierCurveTo(-size * 1.5, -size * 0.3, -size, -size * 0.8, 0, 0);
-      
-      const tailGeom = new THREE.ExtrudeGeometry(tailShape, {
-        depth: size * 0.08,
-        bevelEnabled: true,
-        bevelThickness: size * 0.02,
-        bevelSize: size * 0.02,
-        bevelSegments: 2
-      });
-      const tailMat = new THREE.MeshPhysicalMaterial({
-        color: 0xaef4ff,
-        emissive: 0x7fefff,
-        emissiveIntensity: 1.8,
-        roughness: 0.3,
+        emissiveIntensity: 2.5,
+        roughness: 0.1,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.5,
+        transmission: 0.7,
+        thickness: 1,
+        clearcoat: 1,
         side: THREE.DoubleSide
       });
-      const tail = new THREE.Mesh(tailGeom, tailMat);
-      tail.position.set(-size * 1.5, 0, -size * 0.04);
-      group.add(tail);
+      const bell = new THREE.Mesh(bellGeom, bellMat);
+      bell.rotation.x = Math.PI;
+      group.add(bell);
 
-      // Eyes
-      const eyeGeom = new THREE.SphereGeometry(size * 0.1, 12, 12);
-      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000033 });
+      // Glowing core
+      const coreGeom = new THREE.SphereGeometry(size * 0.5, 16, 12);
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xaef4ff,
+        transparent: true,
+        opacity: 0.6
+      });
+      const core = new THREE.Mesh(coreGeom, coreMat);
+      core.position.y = size * 0.2;
+      group.add(core);
+
+      // Trailing tentacles
+      const tentaclesGroup = new THREE.Group();
+      tentaclesGroup.position.y = -size * 0.4;
+      group.add(tentaclesGroup);
+
+      const tentacles = [];
+      const numTentacles = 6;
       
-      const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
-      leftEye.position.set(size * 1.5, size * 0.1, size * 0.15);
-      group.add(leftEye);
+      for (let i = 0; i < numTentacles; i++) {
+        const angle = (i / numTentacles) * Math.PI * 2;
+        const radius = size * 0.5;
+        const tentacleLength = size * (3 + Math.random() * 2);
+        const points = [];
+        
+        for (let j = 0; j <= 10; j++) {
+          const t = j / 10;
+          points.push(new THREE.Vector3(
+            Math.cos(angle) * radius * (1 - t * 0.3),
+            -t * tentacleLength,
+            Math.sin(angle) * radius * (1 - t * 0.3)
+          ));
+        }
+        
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tentacleGeom = new THREE.TubeGeometry(curve, 16, size * 0.04, 6, false);
+        const tentacleMat = new THREE.MeshPhysicalMaterial({
+          color: 0xaef4ff,
+          emissive: 0x7fefff,
+          emissiveIntensity: 2,
+          roughness: 0.2,
+          transparent: true,
+          opacity: 0.5,
+          side: THREE.DoubleSide
+        });
+        const tentacle = new THREE.Mesh(tentacleGeom, tentacleMat);
+        tentaclesGroup.add(tentacle);
+        
+        tentacles.push({
+          mesh: tentacle,
+          basePoints: points.map(p => p.clone()),
+          angle: angle,
+          length: tentacleLength,
+          phase: Math.random() * Math.PI * 2,
+          speed: 1.5 + Math.random() * 0.5
+        });
+      }
+
+      group.userData.tentacles = tentacles;
+      group.userData.tentaclesGroup = tentaclesGroup;
+      group.userData.bell = bell;
+      group.userData.pulsePhase = Math.random() * Math.PI * 2;
       
-      const rightEye = new THREE.Mesh(eyeGeom, eyeMat);
-      rightEye.position.set(size * 1.5, size * 0.1, -size * 0.15);
-      group.add(rightEye);
+      allJellyfish.push(group);
 
       return group;
+    }
+
+    // Animate tentacles
+    function animateTentacles(jellyGroup, time, velocity = null) {
+      const tentacles = jellyGroup.userData.tentacles;
+      if (!tentacles) return;
+
+      const bell = jellyGroup.userData.bell;
+      const pulsePhase = jellyGroup.userData.pulsePhase;
+      
+      // Pulsing bell animation
+      const pulse = 1 + Math.sin(time * 2 + pulsePhase) * 0.08;
+      if (bell) {
+        bell.scale.set(pulse, 1 + (1 - pulse) * 0.5, pulse);
+      }
+
+      for (const t of tentacles) {
+        const points = [];
+        const basePoints = t.basePoints;
+        
+        for (let i = 0; i < basePoints.length; i++) {
+          const bp = basePoints[i];
+          const progress = i / (basePoints.length - 1);
+          
+          // Wave motion increases along tentacle length
+          const waveAmp = progress * progress * t.length * 0.15;
+          const waveFreq = 3;
+          const phase = time * t.speed + t.phase;
+          
+          // Add velocity-based trailing if moving
+          let velOffset = { x: 0, z: 0 };
+          if (velocity && velocity.length() > 0.1) {
+            const velNorm = velocity.clone().normalize();
+            velOffset.x = -velNorm.x * progress * progress * t.length * 0.3;
+            velOffset.z = -velNorm.z * progress * progress * t.length * 0.3;
+          }
+          
+          points.push(new THREE.Vector3(
+            bp.x + Math.sin(phase + progress * waveFreq) * waveAmp + velOffset.x,
+            bp.y + Math.cos(phase * 0.7 + progress * 2) * waveAmp * 0.3,
+            bp.z + Math.cos(phase + progress * waveFreq) * waveAmp + velOffset.z
+          ));
+        }
+        
+        // Rebuild tube geometry
+        const curve = new THREE.CatmullRomCurve3(points);
+        const newGeom = new THREE.TubeGeometry(
+          curve, 
+          t.isArm ? 12 : 20, 
+          t.mesh.geometry.parameters.radius || 0.1, 
+          t.isArm ? 6 : 8, 
+          false
+        );
+        t.mesh.geometry.dispose();
+        t.mesh.geometry = newGeom;
+      }
     }
 
     // Bubble particles (like stars but bubbly)
@@ -376,23 +477,23 @@
     const bubbles = new THREE.Points(bubbleGeometry, bubbleMaterial);
     scene.add(bubbles);
 
-    const ambient = new THREE.AmbientLight(0x4a6a8a, 0.75);
+    const ambient = new THREE.AmbientLight(0x4a6a8a, 0.85);
     scene.add(ambient);
 
-    const hemiLight = new THREE.HemisphereLight(0x6c9dff, 0x021020, 0.6);
+    const hemiLight = new THREE.HemisphereLight(0x6c9dff, 0x021020, 0.7);
     scene.add(hemiLight);
 
-    const rimLight = new THREE.DirectionalLight(0x88c4ff, 0.9);
+    const rimLight = new THREE.DirectionalLight(0x88c4ff, 1.0);
     rimLight.position.set(120, 160, -80);
     scene.add(rimLight);
 
-    // Sun Fish (big golden koi)
-    const sunFish = createFishMesh(12, 0xfff1c0, 1.8);
-    sunFish.scale.set(1.5, 1.5, 1.5);
-    scene.add(sunFish);
+    // Sun Jellyfish (big golden cosmic jelly)
+    const sunJelly = createJellyfishMesh(15, 0xfff1c0, 2.2, 12);
+    sunJelly.scale.set(1.3, 1.3, 1.3);
+    scene.add(sunJelly);
 
     const sunLight = new THREE.PointLight(0xfff0c1, 4.5, 0, 2);
-    sunLight.position.copy(sunFish.position);
+    sunLight.position.copy(sunJelly.position);
     scene.add(sunLight);
 
     const planetConfigs = [
@@ -424,17 +525,21 @@
     }
 
     const planetStates = planetConfigs.map(cfg => {
-      const mesh = createFishMesh(cfg.size, cfg.color);
+      // More tentacles for bigger jellyfish
+      const numTentacles = Math.max(5, Math.floor(cfg.size * 0.8));
+      const mesh = createJellyfishMesh(cfg.size, cfg.color, 0.8, numTentacles);
       mesh.userData = cfg;
 
-      // Saturn gets bubble ring instead
+      // Saturn gets glowing ring of small particles
       if (cfg.rings) {
-        const ringGeometry = new THREE.TorusGeometry(cfg.rings.outer, 1.5, 8, 48);
-        const ringMat = new THREE.MeshBasicMaterial({ 
+        const ringGeometry = new THREE.TorusGeometry(cfg.rings.outer * 1.2, 0.8, 8, 64);
+        const ringMat = new THREE.MeshPhysicalMaterial({ 
           color: 0xf6e1b1, 
+          emissive: 0xd9b578,
+          emissiveIntensity: 0.5,
           transparent: true, 
-          opacity: 0.4,
-          wireframe: true 
+          opacity: 0.35,
+          side: THREE.DoubleSide
         });
         const rings = new THREE.Mesh(ringGeometry, ringMat);
         rings.rotation.x = Math.PI / 2;
@@ -480,10 +585,10 @@
       };
     });
 
-    // Moon fish (tiny silverfish)
-    const moonFish = createFishMesh(0.8, 0xf6f3ef, 0.3);
-    moonFish.scale.set(1.2, 1.2, 1.2);
-    scene.add(moonFish);
+    // Moon jellyfish (tiny translucent jelly)
+    const moonJelly = createJellyfishMesh(1.2, 0xf6f3ef, 0.5, 4);
+    moonJelly.scale.set(0.8, 0.8, 0.8);
+    scene.add(moonJelly);
 
     const comets = [];
     let cometSpawnTimer = 6;
@@ -511,24 +616,28 @@
     }
 
     function updatePlanets(dt) {
+      const time = simTime * 0.03;
       for (const state of planetStates) {
-        const accel = computeGravity(sunFish.position, state.position, SUN_MASS);
+        const accel = computeGravity(sunJelly.position, state.position, SUN_MASS);
         state.velocity.addScaledVector(accel, dt);
         state.position.addScaledVector(state.velocity, dt);
         const wobble = state.cfg.tilt ? Math.sin(state.wobbleSeed + simTime * 0.12) * state.cfg.tilt : 0;
         
-        // Swimming motion
-        state.swimPhase += dt * 0.15;
-        const swimWobble = Math.sin(state.swimPhase) * 1.5;
+        // Gentle floating motion
+        state.swimPhase += dt * 0.08;
+        const floatWobble = Math.sin(state.swimPhase) * 2;
         
-        state.mesh.position.set(state.position.x, wobble + swimWobble, state.position.z);
+        state.mesh.position.set(state.position.x, wobble + floatWobble, state.position.z);
         
-        // Make fish face direction of travel
-        const angle = Math.atan2(state.velocity.x, state.velocity.z);
-        state.mesh.rotation.y = angle + Math.PI / 2;
+        // Jellyfish slowly rotate as they drift
+        state.mesh.rotation.y += dt * 0.003;
         
-        // Gentle swimming tilt
-        state.mesh.rotation.z = Math.sin(state.swimPhase * 2) * 0.1;
+        // Gentle bobbing tilt
+        state.mesh.rotation.x = Math.sin(state.swimPhase * 0.7) * 0.08;
+        state.mesh.rotation.z = Math.cos(state.swimPhase * 0.5) * 0.06;
+        
+        // Animate tentacles with velocity trailing
+        animateTentacles(state.mesh, time, state.velocity);
         
         updatePlanetTrail(state);
       }
@@ -540,20 +649,29 @@
       moonPhase += dt * 0.35;
       const moonX = earth.position.x + Math.cos(moonPhase) * 12;
       const moonZ = earth.position.z + Math.sin(moonPhase) * 12;
-      moonFish.position.set(
+      moonJelly.position.set(
         moonX,
         earth.mesh.position.y + Math.sin(moonPhase * 1.5) * 2,
         moonZ
       );
-      // Face direction of orbit
-      moonFish.rotation.y = moonPhase + Math.PI / 2;
+      // Gentle rotation
+      moonJelly.rotation.y += dt * 0.01;
+      moonJelly.rotation.x = Math.sin(moonPhase) * 0.1;
+      
+      // Animate moon tentacles
+      const moonVel = new THREE.Vector3(-Math.sin(moonPhase), 0, Math.cos(moonPhase)).multiplyScalar(0.5);
+      animateTentacles(moonJelly, simTime * 0.03, moonVel);
     }
 
-    function updateSunFish(dt) {
-      // Gentle wobbling for the sun fish
-      sunFish.rotation.y += 0.002 * dt;
-      sunFish.position.y = Math.sin(simTime * 0.05) * 2;
-      sunFish.rotation.z = Math.sin(simTime * 0.08) * 0.05;
+    function updateSunJelly(dt) {
+      // Gentle pulsing for the sun jellyfish
+      sunJelly.rotation.y += 0.001 * dt;
+      sunJelly.position.y = Math.sin(simTime * 0.03) * 3;
+      sunJelly.rotation.x = Math.sin(simTime * 0.04) * 0.03;
+      sunJelly.rotation.z = Math.cos(simTime * 0.05) * 0.03;
+      
+      // Animate sun tentacles
+      animateTentacles(sunJelly, simTime * 0.02, null);
     }
 
     function spawnComet() {
@@ -565,12 +683,12 @@
         height,
         Math.sin(startAngle) * radius
       );
-      const toSun = new THREE.Vector3().copy(sunFish.position).sub(start).normalize();
+      const toSun = new THREE.Vector3().copy(sunJelly.position).sub(start).normalize();
       const tangent = new THREE.Vector3(-toSun.z, THREE.MathUtils.randFloat(-0.15, 0.15), toSun.x).normalize();
       const velocity = toSun.multiplyScalar(THREE.MathUtils.randFloat(1.2, 1.9))
         .add(tangent.multiplyScalar(THREE.MathUtils.randFloat(1.2, 2.4)));
 
-      const cometMesh = createCometFish(1.4);
+      const cometMesh = createCometJellyfish(1.4);
       cometMesh.position.copy(start);
       scene.add(cometMesh);
 
@@ -661,6 +779,13 @@
     function disposeComet(comet) {
       scene.remove(comet.mesh);
       scene.remove(comet.trailLine);
+      
+      // Remove from jellyfish tracking array
+      const jellyIndex = allJellyfish.indexOf(comet.mesh);
+      if (jellyIndex > -1) {
+        allJellyfish.splice(jellyIndex, 1);
+      }
+      
       comet.mesh.traverse(child => {
         if (child.geometry) child.geometry.dispose();
         if (child.material) child.material.dispose();
@@ -678,7 +803,7 @@
 
       for (let i = comets.length - 1; i >= 0; i--) {
         const comet = comets[i];
-        let acceleration = computeGravity(sunFish.position, comet.position, SUN_MASS);
+        let acceleration = computeGravity(sunJelly.position, comet.position, SUN_MASS);
         for (const state of planetStates) {
           const dir = new THREE.Vector3().copy(state.position).sub(comet.position);
           const distSq = Math.max(dir.lengthSq(), 9);
@@ -695,14 +820,17 @@
         comet.position.addScaledVector(comet.velocity, dt);
         comet.mesh.position.copy(comet.position);
         
-        // Swimming motion for comet fish
-        comet.swimPhase += dt * 0.3;
-        comet.mesh.position.y += Math.sin(comet.swimPhase) * 0.5;
+        // Floating motion for comet jellyfish
+        comet.swimPhase += dt * 0.2;
+        comet.mesh.position.y += Math.sin(comet.swimPhase) * 0.3;
         
-        // Face direction of travel
-        const angle = Math.atan2(comet.velocity.x, comet.velocity.z);
-        comet.mesh.rotation.y = angle + Math.PI / 2;
-        comet.mesh.rotation.z = Math.sin(comet.swimPhase * 2) * 0.15;
+        // Gentle rotation
+        comet.mesh.rotation.y += dt * 0.005;
+        comet.mesh.rotation.x = Math.sin(comet.swimPhase) * 0.1;
+        comet.mesh.rotation.z = Math.cos(comet.swimPhase * 0.7) * 0.08;
+        
+        // Animate comet tentacles trailing behind
+        animateTentacles(comet.mesh, simTime * 0.03, comet.velocity);
         
         updateCometTrail(comet);
 
@@ -725,7 +853,7 @@
       updateMoon(dt);
       updateComets(dt);
       updateFlares(dt);
-      updateSunFish(dt);
+      updateSunJelly(dt);
 
       // Gentle bubble movement
       bubbles.rotation.y += 0.0001 * dt;
