@@ -55,8 +55,9 @@
     // Core state: original algorithm (index 0) and 29 subtly varied copies.
     function createChain(seedIndex){
       const t = seedIndex / (NUM_ALGOS - 1 || 1); // 0..1
-      const ampJitter = 1 + (Math.random()*0.1 - 0.05);   // ±5%
-      const angleJitter = (Math.random()*0.1 - 0.05);     // ±0.05 rad
+      // jitter now effectively zero so algorithms visually overlap
+      const ampJitter = 1 + (Math.random()*0.00001 - 0.000005);   // ±0.0005%
+      const angleJitter = (Math.random()*0.00001 - 0.000005);     // almost no angle change
 
       const segments = [];
       for(let i=0;i<NUM_SEGMENTS;i++){
@@ -67,14 +68,14 @@
           angle: Math.random()*Math.PI*2 + angleJitter,
           angVel: 0,
           // per-segment tiny natural frequency and phase offsets
-          natFreq: 0.8 + (Math.random()*0.1 - 0.05),   // within ~±5%
+          natFreq: 0.8 + (Math.random()*0.00001 - 0.000005),   // extremely close
           natPhase: Math.random()*Math.PI*2
         });
       }
 
       // Damping varies very slightly: nearest (0) highest damping, farthest smallest.
       const baseDamping = +dampingSlider.value;
-      const dampingRange = 0.05; // within 5% spread
+      const dampingRange = 0.005; // practically identical damping
       const perAlgoDamping = baseDamping - t * (dampingRange * (1 - baseDamping));
 
       return {
@@ -130,9 +131,9 @@
       for(let i=0;i<NUM_SEGMENTS;i++){
         const s = algo.segments[i];
 
-        // tiny additional random impact on top of original, within 5%
-        const noise = (Math.random()-0.5)*0.1; // ±0.05 avg
-        const naturalKick = Math.sin(globalTime * s.natFreq + s.natPhase) * 0.05; // within ±5%
+        // tiny additional random impact on top of original, another ~100x smaller
+        const noise = (Math.random()-0.5)*0.0001; // effectively negligible
+        const naturalKick = Math.sin(globalTime * s.natFreq + s.natPhase) * 0.00005;
 
         // angle integration
         s.angVel += (noise + naturalKick) * 0.5;
@@ -140,7 +141,7 @@
         s.angVel *= damping;
 
         // amplitude integration + bounce at bounds
-        s.ampVel += noise * 2.0;
+        s.ampVel += noise * 0.002;
         s.amp += s.ampVel * dt;
 
         if(s.amp > maxAmp){
