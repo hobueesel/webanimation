@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Models Comparison - Dancing Elves Experiment</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #0f0f23 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientFlow 4s ease infinite;
+        }
+
+        @keyframes gradientFlow {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #9fb8d6;
+            font-size: 1.1rem;
+            margin-bottom: 3rem;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .section h2 {
+            color: #4ecdc4;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+            border-bottom: 2px solid rgba(78, 205, 196, 0.3);
+            padding-bottom: 0.5rem;
+        }
+
+        .prompt-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1.5rem;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b6b;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #ffd700;
+        }
+
+        .source-link {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: transform 0.2s;
+        }
+
+        .source-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .experiments-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .experiment-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .experiment-card:hover {
+            transform: translateY(-4px);
+            border-color: #4ecdc4;
+            box-shadow: 0 8px 20px rgba(78, 205, 196, 0.2);
+            background: rgba(78, 205, 196, 0.08);
+        }
+
+        .card-number {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #4ecdc4;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-model {
+            font-size: 1rem;
+            color: #ff6b6b;
+            margin-bottom: 0.8rem;
+            font-weight: 500;
+        }
+
+        .card-meta {
+            font-size: 0.85rem;
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-size {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #999;
+            margin-top: 0.3rem;
+        }
+
+        .info-note {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: #ffecb3;
+        }
+
+        .legend {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎄 AI Models Performance Comparison</h1>
+        <div class="subtitle">Dancing Elves Audio Visualizer Experiment</div>
+
+        <div style="background: rgba(255, 0, 0, 0.15); border: 2px solid #ff4444; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #ff6b6b; margin-bottom: 0.5rem;">⚠️ WORKS ONLY IN CHROME ⚠️</div>
+            <div style="color: #ffaaaa; font-size: 1.1rem;">Audio capture functionality requires Chrome or Edge browser</div>
+        </div>
+
+        <!-- Prompt & Source Section -->
+        <div class="section">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; align-items: start;">
+                <div>
+                    <h2>📝 Original Prompt</h2>
+                    <div class="prompt-box">
+                        "i want you to copy index20.html but as the visualizer i want dancing elves based on the frequency range input, create index35.html. Add a big title 'GPT-5 mini'"
+                    </div>
+                    <div class="info-note">
+                        <strong>Task:</strong> Copy index20.html, replace bars with dancing elves controlled by frequency ranges, add title "GPT-5 mini"
+                    </div>
+                </div>
+                <div>
+                    <h2>📄 Source File</h2>
+                    <a href="index20.html" class="source-link" target="_blank" style="display: inline-block; margin-top: 1rem;">
+                        📊 index20.html<br>YouTube Audio Spectral Analyzer
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Experiments Grid -->
+        <div class="section">
+            <h2>🧪 All Model Experiments (index21.html - index35.html)</h2>
+            <div class="experiments-grid">
+                
+                <a href="index21.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #21</div>
+                    <div class="card-model">GPT-5.2</div>
+                    <div class="card-meta">
+                        <span>830 lines</span>
+                        <span class="file-size">FFT-based</span>
+                    </div>
+                </a>
+
+                <a href="index22.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #22</div>
+                    <div class="card-model">Gemini 3.0 pro</div>
+                    <div class="card-meta">
+                        <span>627 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index23.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #23</div>
+                    <div class="card-model">Claude Opus 4.5</div>
+                    <div class="card-meta">
+                        <span>969 lines</span>
+                        <span class="file-size">Extended</span>
+                    </div>
+                </a>
+
+                <a href="index24.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #24</div>
+                    <div class="card-model">Claude Sonnet 4.5</div>
+                    <div class="card-meta">
+                        <span>769 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index25.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #25</div>
+                    <div class="card-model">GPT-5.0</div>
+                    <div class="card-meta">
+                        <span>455 lines</span>
+                        <span class="file-size">Compact</span>
+                    </div>
+                </a>
+
+                <a href="index26.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #26</div>
+                    <div class="card-model">GPT-5.0-Codex</div>
+                    <div class="card-meta">
+                        <span>623 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index27.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #27</div>
+                    <div class="card-model">GPT-5.1</div>
+                    <div class="card-meta">
+                        <span>610 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index28.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #28</div>
+                    <div class="card-model">GPT-5.1-Codex</div>
+                    <div class="card-meta">
+                        <span>604 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index29.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #29</div>
+                    <div class="card-model">GPT-5.1-Codex-Max</div>
+                    <div class="card-meta">
+                        <span>572 lines</span>
+                        <span class="file-size">Compact</span>
+                    </div>
+                </a>
+
+                <a href="index30.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #30</div>
+                    <div class="card-model">GPT-5.1-Codex-Mini</div>
+                    <div class="card-meta">
+                        <span>601 lines</span>
+                        <span class="file-size">Themed</span>
+                    </div>
+                </a>
+
+                <a href="index31.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #31</div>
+                    <div class="card-model">Gemini 3 Flash</div>
+                    <div class="card-meta">
+                        <span>606 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index32.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #32</div>
+                    <div class="card-model">Haiku 4.5</div>
+                    <div class="card-meta">
+                        <span>697 lines</span>
+                        <span class="file-size">Extended</span>
+                    </div>
+                </a>
+
+                <a href="index33.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #33</div>
+                    <div class="card-model">Raptor</div>
+                    <div class="card-meta">
+                        <span>574 lines</span>
+                        <span class="file-size">Compact</span>
+                    </div>
+                </a>
+
+                <a href="index34.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #34</div>
+                    <div class="card-model">Grok Code Fast 1</div>
+                    <div class="card-meta">
+                        <span>620 lines</span>
+                        <span class="file-size">Standard</span>
+                    </div>
+                </a>
+
+                <a href="index35.html" class="experiment-card" target="_blank">
+                    <div class="card-number">Experiment #35</div>
+                    <div class="card-model">GPT-5 mini ⭐ (Latest)</div>
+                    <div class="card-meta">
+                        <span>337 lines</span>
+                        <span class="file-size">Most Compact</span>
+                    </div>
+                </a>
+
+            </div>
+        </div>
+
+
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); color: #666;">
+            <p>AI Models Performance Comparison Dashboard</p>
+            <p style="font-size: 0.85rem; margin-top: 0.5rem;">Created: December 21, 2025 | Experiment: Dancing Elves Audio Visualizer</p>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactivity
+        document.querySelectorAll('.experiment-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                // Visual feedback
+                this.style.transform = 'scale(0.98)';
+                setTimeout(() => {
+                    this.style.transform = '';
+                }, 100);
+            });
+        });
+
+        // Log stats on load
+        console.log('%c🎄 AI Models Comparison Dashboard Loaded', 'font-size: 20px; color: #4ecdc4; font-weight: bold;');
+        console.log('%cTotal Experiments: 15', 'color: #ff6b6b;');
+        console.log('%cView source code of any experiment to compare implementation details', 'color: #45b7d1;');
+    </script>
+</body>
+</html>
