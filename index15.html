@@ -277,9 +277,46 @@
             }
         }
 
+        // Simple sphere-based collision resolution between swastikas (equal mass, elastic-ish)
+        function resolveCollisions() {
+            for (let i = 0; i < swastikas.length; i++) {
+                for (let j = i + 1; j < swastikas.length; j++) {
+                    const a = swastikas[i];
+                    const b = swastikas[j];
+
+                    const delta = new THREE.Vector3().subVectors(b.mesh.position, a.mesh.position);
+                    const dist = delta.length();
+                    const minDist = a.radius + b.radius;
+
+                    if (dist > 1e-4 && dist < minDist) {
+                        const normal = delta.multiplyScalar(1 / dist);
+                        const overlap = minDist - dist;
+
+                        // Separate the objects equally
+                        a.mesh.position.addScaledVector(normal, -overlap * 0.5);
+                        b.mesh.position.addScaledVector(normal, overlap * 0.5);
+
+                        // Compute relative velocity along the normal
+                        const relVel = new THREE.Vector3().subVectors(b.velocity, a.velocity);
+                        const relAlongNormal = relVel.dot(normal);
+
+                        if (relAlongNormal < 0) {
+                            const restitution = 0.9; // near-elastic bounce
+                            const impulseMag = -(1 + restitution) * relAlongNormal * 0.5; // equal mass
+                            const impulse = normal.multiplyScalar(impulseMag);
+
+                            a.velocity.add(impulse);
+                            b.velocity.addScaledVector(impulse, -1);
+                        }
+                    }
+                }
+            }
+        }
+
         function animate() {
             const dt = clock.getDelta();
             swastikas.forEach(s => updateSwastika(s, dt));
+            resolveCollisions();
             controls.update();
             renderer.render(scene, camera);
             requestAnimationFrame(animate);

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chickens vs Cows - 3D Auto Battle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #05080f;
+            --bg-2: #0c1222;
+            --accent: #9ef7a6;
+            --cow: #ffe08a;
+            --chicken: #ff6b6b;
+            --muted: #8fa2c2;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 15% 20%, rgba(255, 107, 107, 0.08), transparent 32%),
+                        radial-gradient(circle at 80% 10%, rgba(158, 247, 166, 0.1), transparent 30%),
+                        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+            color: #e7edff;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            overflow: hidden;
+        }
+        canvas { display: block; }
+        #hud {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            padding: 14px 16px;
+            background: rgba(17, 24, 43, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            backdrop-filter: blur(10px);
+            max-width: 360px;
+            box-shadow: 0 25px 55px rgba(0, 0, 0, 0.35);
+        }
+        #hud h1 {
+            margin: 0 0 6px 0;
+            font-size: 18px;
+            letter-spacing: 0.4px;
+        }
+        #hud .row { display: flex; gap: 10px; flex-wrap: wrap; }
+        #hud .pill {
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        #hud .value { color: #fff; font-weight: 600; }
+        #hud .bar {
+            width: 100%; height: 8px; border-radius: 999px;
+            background: rgba(255,255,255,0.07); margin: 8px 0 0 0; overflow: hidden;
+        }
+        #hud .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--chicken), var(--cow)); }
+        #attackStats { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+        .statLabel { font-size: 12px; color: #dfe6ff; font-weight: 600; }
+        .statRow { font-size: 11px; color: #b8c8e6; line-height: 1.35; background: rgba(255,255,255,0.04); padding: 6px 8px; border-radius: 8px; }
+        #notes { margin-top: 10px; font-size: 12px; color: #b8c8e6; line-height: 1.35; }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <h1>Chickens vs Cows</h1>
+        <div class="row">
+            <div class="pill">Round <span class="value" id="round">1</span></div>
+            <div class="pill">Chickens <span class="value" id="chickenWins">0</span></div>
+            <div class="pill">Cows <span class="value" id="cowWins">0</span></div>
+            <div class="pill">Balance <span class="value" id="balanceReadout">1.00 / 1.00</span></div>
+        </div>
+        <div class="bar"><span id="winBar" style="width: 50%"></span></div>
+        <div id="attackStats">
+            <div class="statLabel">Chickens</div><div class="statLabel">Cows</div>
+            <div class="statRow" id="chickStat0"></div><div class="statRow" id="cowStat0"></div>
+            <div class="statRow" id="chickStat1"></div><div class="statRow" id="cowStat1"></div>
+            <div class="statRow" id="chickStat2"></div><div class="statRow" id="cowStat2"></div>
+        </div>
+        <div id="notes">
+            100 chickens vs 3 cows in a looping skirmish. Three distinct attacks per side (fast/light, medium, heavy/AOE) with visible effects. A tiny online learner nudges damage scales so both teams hover near 50/50 over many rounds. Watch at least 10 rounds to see balance converge.
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+
+        const CHICKEN_COUNT = 100;
+        const COW_COUNT = 3;
+        const arenaSize = 60;
+        const clock = new THREE.Clock();
+
+        const stats = { round: 1, chickenWins: 0, cowWins: 0 };
+        const balance = { chickenPower: 1.0, cowPower: 1.0 };
+        const learner = { lr: 0.08 };
+        const attackStats = {
+            chicken: CHICKEN_ATTACKS.map(() => ({ kills: 0, uses: 0 })),
+            cow: COW_ATTACKS.map(() => ({ kills: 0, uses: 0 }))
+        };
+
+        const CHICKEN_ATTACKS = [
+            { name: 'Peck', damage: 7, range: 2.2, windup: 0.35, cooldown: 0.9, color: 0xffd166, splash: 0, style: 'stab' },
+            { name: 'Spur Kick', damage: 16, range: 3.5, windup: 0.7, cooldown: 1.7, color: 0xff6b6b, splash: 0, style: 'arc' },
+            { name: 'Egg Bomb', damage: 32, range: 5.0, windup: 1.2, cooldown: 3.1, color: 0x74c0fc, splash: 2.5, style: 'burst' }
+        ];
+
+        const COW_ATTACKS = [
+            { name: 'Charge', damage: 34, range: 7.5, windup: 1.0, cooldown: 3.0, color: 0xffe08a, splash: 0, style: 'trail' },
+            { name: 'Hoof Stomp', damage: 52, range: 3.0, windup: 1.4, cooldown: 4.0, color: 0xf783ac, splash: 2.4, style: 'ring' },
+            { name: 'Moo Shockwave', damage: 26, range: 6.0, windup: 1.1, cooldown: 3.2, color: 0x9ef7a6, splash: 3.2, style: 'wave' }
+        ];
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x0b1224, 40, 140);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+        camera.position.set(0, 26, 58);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 6, 0);
+        controls.enableDamping = true;
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+        scene.add(ambient);
+
+        const sun = new THREE.DirectionalLight(0xfff6d0, 0.9);
+        sun.position.set(22, 38, 18);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(1024, 1024);
+        sun.shadow.camera.near = 10;
+        sun.shadow.camera.far = 120;
+        scene.add(sun);
+
+        const rim = new THREE.DirectionalLight(0x7acbff, 0.5);
+        rim.position.set(-18, 24, -28);
+        scene.add(rim);
+
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x0f1c2f, roughness: 0.95, metalness: 0.1 });
+        const ground = new THREE.Mesh(new THREE.CircleGeometry(arenaSize, 128), groundMat);
+        ground.receiveShadow = true;
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        const grid = new THREE.GridHelper(arenaSize * 1.4, 22, 0x27405c, 0x1b2b41);
+        grid.position.y = 0.02;
+        scene.add(grid);
+
+        const haze = new THREE.Mesh(
+            new THREE.CylinderGeometry(arenaSize * 0.9, arenaSize * 1.1, 30, 32, 1, true),
+            new THREE.MeshBasicMaterial({ color: 0x162033, transparent: true, opacity: 0.12, side: THREE.DoubleSide })
+        );
+        haze.position.y = 15;
+        scene.add(haze);
+
+        const chickenGeo = new THREE.SphereGeometry(0.5, 12, 12);
+        const chickenMat = new THREE.MeshStandardMaterial({ color: 0xff6b6b, emissive: 0x2b0c0c, roughness: 0.45 });
+        const chickenMesh = new THREE.InstancedMesh(chickenGeo, chickenMat, CHICKEN_COUNT);
+        chickenMesh.castShadow = true;
+        chickenMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(chickenMesh);
+
+        const cowGeo = new THREE.SphereGeometry(1.2, 14, 14);
+        const cowMat = new THREE.MeshStandardMaterial({ color: 0xffe08a, emissive: 0x3d2d07, roughness: 0.4 });
+        const cowMesh = new THREE.InstancedMesh(cowGeo, cowMat, COW_COUNT);
+        cowMesh.castShadow = true;
+        cowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(cowMesh);
+
+        const effectGroup = new THREE.Group();
+        scene.add(effectGroup);
+
+        const chickens = [];
+        const cows = [];
+        const effects = [];
+
+        function makeUnit(isChicken, idx) {
+            const baseHealth = isChicken ? 50 : 540;
+            const moveSpeed = isChicken ? 10 : 6;
+            const turnRate = isChicken ? 6 : 3.8;
+            return {
+                id: idx,
+                type: isChicken ? 'chicken' : 'cow',
+                pos: new THREE.Vector3(),
+                vel: new THREE.Vector3(),
+                dir: new THREE.Vector3(1, 0, 0),
+                health: baseHealth,
+                maxHealth: baseHealth,
+                cooldown: 0,
+                windup: 0,
+                attackIdx: 0,
+                target: null,
+                alive: true,
+                moveSpeed,
+                turnRate
+            };
+        }
+
+        for (let i = 0; i < CHICKEN_COUNT; i++) chickens.push(makeUnit(true, i));
+        for (let i = 0; i < COW_COUNT; i++) cows.push(makeUnit(false, i));
+
+        function jitterPosition(radius) {
+            const angle = Math.random() * Math.PI * 2;
+            const r = radius * Math.sqrt(Math.random());
+            return new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+        }
+
+        function resetRound() {
+            chickens.forEach((c, i) => {
+                c.pos.copy(jitterPosition(arenaSize * 0.35)).add(new THREE.Vector3(-8, 0, 0));
+                c.vel.set(0, 0, 0);
+                c.dir.set(1, 0, 0);
+                c.health = c.maxHealth;
+                c.alive = true;
+                c.cooldown = Math.random();
+                c.windup = 0;
+            });
+            cows.forEach((c, i) => {
+                c.pos.copy(jitterPosition(arenaSize * 0.2)).add(new THREE.Vector3(10, 0, 0));
+                c.vel.set(0, 0, 0);
+                c.dir.set(-1, 0, 0);
+                c.health = c.maxHealth;
+                c.alive = true;
+                c.cooldown = Math.random();
+                c.windup = 0;
+            });
+            effects.splice(0, effects.length);
+            while (effectGroup.children.length) effectGroup.remove(effectGroup.children[0]);
+        }
+
+        function clampToArena(p) {
+            const limit = arenaSize * 0.48;
+            p.x = Math.max(-limit, Math.min(limit, p.x));
+            p.z = Math.max(-limit, Math.min(limit, p.z));
+        }
+
+        function pickTarget(unit) {
+            const foes = unit.type === 'chicken' ? cows : chickens;
+            let best = null;
+            let bestDist = Infinity;
+            for (const f of foes) {
+                if (!f.alive) continue;
+                const d = unit.pos.distanceToSquared(f.pos);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = f;
+                }
+            }
+            unit.target = best;
+        }
+
+        function maybeAttack(unit, dt) {
+            if (!unit.target || !unit.target.alive) return;
+            const attacks = unit.type === 'chicken' ? CHICKEN_ATTACKS : COW_ATTACKS;
+            if (unit.cooldown > 0) { unit.cooldown -= dt; return; }
+            if (unit.windup > 0) { unit.windup -= dt; if (unit.windup <= 0) resolveAttack(unit); return; }
+
+            const attack = attacks[Math.floor(Math.random() * attacks.length)];
+            const dist = unit.pos.distanceTo(unit.target.pos);
+            if (dist <= attack.range) {
+                unit.attackIdx = attacks.indexOf(attack);
+                unit.windup = attack.windup;
+                spawnEffect(unit, attack, 0.25, true);
+            }
+        }
+
+        function resolveAttack(unit) {
+            const attack = unit.type === 'chicken' ? CHICKEN_ATTACKS[unit.attackIdx] : COW_ATTACKS[unit.attackIdx];
+            const targetTeam = unit.type === 'chicken' ? cows : chickens;
+            const scale = unit.type === 'chicken' ? balance.chickenPower : balance.cowPower;
+            const baseDmg = attack.damage * scale;
+            const range = attack.splash > 0 ? attack.splash : 0.8;
+            const origin = unit.target && unit.target.alive ? unit.target.pos.clone() : unit.pos.clone();
+            const attackerKey = unit.type === 'chicken' ? 'chicken' : 'cow';
+            attackStats[attackerKey][unit.attackIdx].uses++;
+            for (const foe of targetTeam) {
+                if (!foe.alive) continue;
+                const d = foe.pos.distanceTo(origin);
+                if (d <= (attack.splash > 0 ? attack.splash : attack.range)) {
+                    const falloff = attack.splash > 0 ? THREE.MathUtils.clamp(1 - d / attack.splash, 0.35, 1) : 1;
+                    applyDamage(foe, baseDmg * falloff, attackerKey, unit.attackIdx);
+                }
+            }
+            unit.cooldown = attack.cooldown;
+            spawnEffect(unit, attack, attack.splash > 0 ? attack.splash : attack.range, false);
+        }
+
+        function applyDamage(target, amount, attackerKey, attackIdx) {
+            target.health -= amount;
+            if (target.health <= 0) {
+                target.alive = false;
+                target.health = 0;
+                attackStats[attackerKey][attackIdx].kills++;
+            }
+        }
+
+        function spawnEffect(unit, attack, size, isWindup) {
+            const duration = isWindup ? attack.windup : 0.8;
+            const dir = unit.dir.clone().normalize();
+            const origin = unit.target && unit.target.alive ? unit.target.pos : unit.pos;
+
+            const material = new THREE.MeshBasicMaterial({
+                color: attack.color,
+                transparent: true,
+                opacity: isWindup ? 0.22 : 0.6,
+                blending: THREE.AdditiveBlending,
+                wireframe: attack.style === 'ring'
+            });
+
+            let geo;
+            switch (attack.style) {
+                case 'stab':
+                    geo = new THREE.ConeGeometry(0.35, 1.5, 12);
+                    break;
+                case 'arc':
+                    geo = new THREE.TorusGeometry(1.0, 0.1, 8, 24, Math.PI * 0.9);
+                    break;
+                case 'burst':
+                    geo = new THREE.IcosahedronGeometry(0.7, 0);
+                    break;
+                case 'trail':
+                    geo = new THREE.CylinderGeometry(0.25, 0.25, 3.0, 8, 1, true);
+                    break;
+                case 'ring':
+                    geo = new THREE.TorusGeometry(size * 0.4, 0.14, 10, 32);
+                    break;
+                case 'wave':
+                    geo = new THREE.RingGeometry(0.5, size * 0.3, 24, 1, 0, Math.PI * 2);
+                    break;
+                default:
+                    geo = new THREE.SphereGeometry(0.5, 8, 8);
+            }
+
+            const mesh = new THREE.Mesh(geo, material);
+            mesh.position.copy(origin);
+            mesh.position.y = attack.style === 'trail' ? 0.6 : 0.4;
+
+            if (attack.style !== 'ring' && attack.style !== 'wave') {
+                const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                mesh.quaternion.copy(q);
+            }
+
+            effectGroup.add(mesh);
+            effects.push({ mesh, t: 0, duration, style: attack.style, size, isWindup });
+        }
+
+        function updateEffects(dt) {
+            for (let i = effects.length - 1; i >= 0; i--) {
+                const e = effects[i];
+                e.t += dt;
+                const k = THREE.MathUtils.clamp(e.t / e.duration, 0, 1);
+                const scale = e.isWindup ? 1 + k * 0.8 : 0.5 + k * e.size * 0.6;
+                if (e.style === 'ring') {
+                    e.mesh.scale.set(scale, 1, scale);
+                } else if (e.style === 'wave') {
+                    e.mesh.scale.setScalar(scale * 1.4);
+                } else if (e.style === 'trail') {
+                    e.mesh.scale.set(1, 0.6 + k * e.size, 1);
+                    e.mesh.position.y = 0.3 + Math.sin(k * Math.PI) * 0.8;
+                } else {
+                    e.mesh.scale.setScalar(scale);
+                }
+                e.mesh.material.opacity = e.isWindup ? 0.35 * (1 - k * 0.8) : 0.6 * (1 - k);
+                if (k >= 1) {
+                    effectGroup.remove(e.mesh);
+                    effects.splice(i, 1);
+                }
+            }
+        }
+
+        function steer(unit, dt) {
+            if (!unit.target || !unit.target.alive) return;
+            const desired = new THREE.Vector3().subVectors(unit.target.pos, unit.pos).setY(0).normalize();
+            unit.dir.lerp(desired, Math.min(1, unit.turnRate * dt));
+            unit.vel.copy(unit.dir).multiplyScalar(unit.moveSpeed);
+            unit.pos.addScaledVector(unit.vel, dt);
+            clampToArena(unit.pos);
+        }
+
+        function animateUnits(dt) {
+            for (const c of chickens) {
+                if (!c.alive) continue;
+                pickTarget(c);
+                steer(c, dt);
+                maybeAttack(c, dt);
+            }
+            for (const c of cows) {
+                if (!c.alive) continue;
+                pickTarget(c);
+                steer(c, dt);
+                maybeAttack(c, dt);
+            }
+        }
+
+        function writeInstances() {
+            const tmp = new THREE.Matrix4();
+            let idx = 0;
+            for (const c of chickens) {
+                tmp.makeTranslation(c.pos.x, 0.6, c.pos.z);
+                const scale = c.alive ? 1 : 0.001;
+                tmp.scale(new THREE.Vector3(scale, scale, scale));
+                chickenMesh.setMatrixAt(idx++, tmp);
+            }
+            chickenMesh.instanceMatrix.needsUpdate = true;
+
+            idx = 0;
+            for (const c of cows) {
+                tmp.makeTranslation(c.pos.x, 0.8, c.pos.z);
+                const scale = c.alive ? 1.4 : 0.001;
+                tmp.scale(new THREE.Vector3(scale, scale, scale));
+                cowMesh.setMatrixAt(idx++, tmp);
+            }
+            cowMesh.instanceMatrix.needsUpdate = true;
+        }
+
+        function checkRoundEnd() {
+            const chickensAlive = chickens.some(c => c.alive);
+            const cowsAlive = cows.some(c => c.alive);
+            if (chickensAlive && cowsAlive) return false;
+            const winner = chickensAlive ? 'chickens' : 'cows';
+            if (winner === 'chickens') stats.chickenWins++; else stats.cowWins++;
+            adjustBalance();
+            stats.round++;
+            updateHud();
+            resetRound();
+            return true;
+        }
+
+        function adjustBalance() {
+            const total = Math.max(1, stats.chickenWins + stats.cowWins);
+            const winRate = stats.chickenWins / total;
+            const error = winRate - 0.5; // positive means chickens strong
+            balance.chickenPower = THREE.MathUtils.clamp(balance.chickenPower * (1 - error * learner.lr), 0.6, 1.6);
+            balance.cowPower = THREE.MathUtils.clamp(balance.cowPower * (1 + error * learner.lr), 0.6, 1.6);
+        }
+
+        function updateHud() {
+            document.getElementById('round').textContent = stats.round;
+            document.getElementById('chickenWins').textContent = stats.chickenWins;
+            document.getElementById('cowWins').textContent = stats.cowWins;
+            document.getElementById('balanceReadout').textContent = `${balance.chickenPower.toFixed(2)} / ${balance.cowPower.toFixed(2)}`;
+            const total = Math.max(1, stats.chickenWins + stats.cowWins);
+            const p = (stats.chickenWins / total) * 100;
+            document.getElementById('winBar').style.width = `${p}%`;
+            updateAttackStatRows();
+        }
+
+        const attackRows = {
+            chicken: [
+                document.getElementById('chickStat0'),
+                document.getElementById('chickStat1'),
+                document.getElementById('chickStat2')
+            ],
+            cow: [
+                document.getElementById('cowStat0'),
+                document.getElementById('cowStat1'),
+                document.getElementById('cowStat2')
+            ]
+        };
+
+        function formatAttackRow(attack, stat) {
+            const rate = stat.uses > 0 ? (stat.kills / stat.uses) * 100 : 0;
+            return `${attack.name}: ${stat.kills} K / ${stat.uses} casts (${rate.toFixed(1)}% kill)`;
+        }
+
+        function updateAttackStatRows() {
+            attackRows.chicken.forEach((el, i) => {
+                el.textContent = formatAttackRow(CHICKEN_ATTACKS[i], attackStats.chicken[i]);
+            });
+            attackRows.cow.forEach((el, i) => {
+                el.textContent = formatAttackRow(COW_ATTACKS[i], attackStats.cow[i]);
+            });
+        }
+
+        resetRound();
+        updateHud();
+
+        function animate() {
+            const dt = Math.min(0.033, clock.getDelta());
+            animateUnits(dt);
+            updateEffects(dt);
+            writeInstances();
+            controls.update();
+            renderer.render(scene, camera);
+            checkRoundEnd();
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

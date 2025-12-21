@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Solar System Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="spaceCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('spaceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas to full window size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Star background
+        function createStars() {
+            const stars = [];
+            for (let i = 0; i < 150; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2,
+                    speed: Math.random() / 10
+                });
+            }
+            return stars;
+        }
+
+        const stars = createStars();
+
+        // Solar system objects
+        class CelestialBody {
+            constructor(x, y, radius, color, orbitRadius, orbitSpeed, mass) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.color = color;
+                this.orbitRadius = orbitRadius;
+                this.orbitSpeed = orbitSpeed;
+                this.mass = mass;
+                this.angle = 0;
+                this.trail = [];
+                this.maxTrailLength = 50;
+            }
+
+            update() {
+                // Update position based on angle
+                this.x = canvas.width / 2 + Math.cos(this.angle) * this.orbitRadius;
+                this.y = canvas.height / 2 + Math.sin(this.angle) * this.orbitRadius;
+
+                // Add current position to trail
+                this.trail.push({x: this.x, y: this.y});
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+
+                // Update angle for next frame
+                this.angle += this.orbitSpeed * 0.1;
+            }
+
+            draw() {
+                // Draw trail
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = this.radius / 2;
+                ctx.beginPath();
+                if (this.trail.length > 1) {
+                    ctx.moveTo(this.trail[0].x, this.trail[0].y);
+                    for (let i = 1; i < this.trail.length; i++) {
+                        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                    }
+                }
+
+                // Draw planet
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw orbit path (faint)
+                ctx.strokeStyle = 'rgba(100, 100, 100, 0.1)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2, this.orbitRadius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // Create solar system
+        const sun = new CelestialBody(
+            canvas.width / 2,
+            canvas.height / 2,
+            30,
+            '#FFD700',
+            0,
+            0,
+            1000000
+        );
+
+        const mercury = new CelestialBody(
+            canvas.width / 2 + 50,
+            canvas.height / 2,
+            4,
+            '#A9A9A9',
+            80,
+            0.3,
+            0.1
+        );
+
+        const venus = new CelestialBody(
+            canvas.width / 2 + 100,
+            canvas.height / 2,
+            8,
+            '#F5C7B8',
+            120,
+            0.2,
+            0.3
+        );
+
+        const earth = new CelestialBody(
+            canvas.width / 2 + 150,
+            canvas.height / 2,
+            9,
+            '#1DA1F2',
+            180,
+            0.15,
+            0.4
+        );
+
+        const mars = new CelestialBody(
+            canvas.width / 2 + 200,
+            canvas.height / 2,
+            6,
+            '#C1440E',
+            230,
+            0.12,
+            0.2
+        );
+
+        const jupiter = new CelestialBody(
+            canvas.width / 2 + 300,
+            canvas.height / 2,
+            25,
+            '#D4A017',
+            380,
+            0.08,
+            5
+        );
+
+        const saturn = new CelestialBody(
+            canvas.width / 2 + 450,
+            canvas.height / 2,
+            20,
+            '#E6C229',
+            480,
+            0.07,
+            3
+        );
+
+        const uranus = new CelestialBody(
+            canvas.width / 2 + 550,
+            canvas.height / 2,
+            15,
+            '#D1E9F6',
+            580,
+            0.06,
+            1.5
+        );
+
+        const neptune = new CelestialBody(
+            canvas.width / 2 + 650,
+            canvas.height / 2,
+            14,
+            '#2C3E7A',
+            680,
+            0.05,
+            1.5
+        );
+
+        const planets = [mercury, venus, earth, mars, jupiter, saturn, uranus, neptune];
+
+        // Comet class
+        class Comet {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() > 0.5 ? -20 : canvas.height + 20;
+                this.size = Math.random() * 3 + 1;
+                this.speedX = (Math.random() - 0.5) * 6;
+                this.speedY = (Math.random() - 0.5) * 6;
+                this.color = '#FFFFFF';
+                this.trail = [];
+                this.maxTrailLength = 20;
+            }
+
+            update() {
+                // Add current position to trail
+                this.trail.push({x: this.x, y: this.y});
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+
+                // Update position
+                this.x += this.speedX;
+                this.y += this.speedY;
+
+                // Check for collisions with planets
+                let closestPlanet = null;
+                let minDistance = Infinity;
+
+                for (const planet of planets) {
+                    const dx = this.x - planet.x;
+                    const dy = this.y - planet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < planet.radius && distance < minDistance) {
+                        minDistance = distance;
+                        closestPlanet = planet;
+                    }
+                }
+
+                // Apply gravity from closest planet
+                if (closestPlanet) {
+                    const dx = this.x - closestPlanet.x;
+                    const dy = this.y - closestPlanet.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Calculate gravitational force
+                    const force = closestPlanet.mass / (distance * distance);
+                    const angle = Math.atan2(dy, dx);
+
+                    // Apply velocity change based on gravity
+                    this.speedX += force * Math.cos(angle) * 0.1;
+                    this.speedY += force * Math.sin(angle) * 0.1;
+
+                    // Add some randomness to make it more interesting
+                    this.speedX += (Math.random() - 0.5) * 0.2;
+                    this.speedY += (Math.random() - 0.5) * 0.2;
+                }
+
+                // Remove comet if it goes off screen
+                return this.x > canvas.width + 50 || this.x < -50 ||
+                       this.y > canvas.height + 50 || this.y < -50;
+            }
+
+            draw() {
+                // Draw trail
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = this.size / 2;
+                ctx.beginPath();
+                if (this.trail.length > 1) {
+                    ctx.moveTo(this.trail[0].x, this.trail[0].y);
+                    for (let i = 1; i < this.trail.length; i++) {
+                        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+                    }
+                }
+
+                // Draw comet
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw tail
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.lineWidth = this.size;
+                ctx.beginPath();
+                ctx.moveTo(this.x - this.speedX * 3, this.y - this.speedY * 3);
+                ctx.lineTo(this.x + this.speedX * 3, this.y + this.speedY * 3);
+                ctx.stroke();
+            }
+        }
+
+        const comets = [];
+        let cometTimer = 0;
+        const cometInterval = 5; // seconds
+
+        function animate() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw stars
+            for (const star of stars) {
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Move stars slightly for parallax effect
+                star.x += star.speed;
+                if (star.x > canvas.width) star.x = 0;
+            }
+
+            // Update and draw solar system
+            sun.draw();
+            planets.forEach(planet => {
+                planet.update();
+                planet.draw();
+            });
+
+            // Comet management
+            cometTimer++;
+            if (cometTimer >= cometInterval * 60) { // Convert seconds to frames
+                comets.push(new Comet());
+                cometTimer = 0;
+            }
+
+            // Update and draw comets
+            for (let i = comets.length - 1; i >= 0; i--) {
+                if (comets[i].update()) {
+                    comets.splice(i, 1);
+                } else {
+                    comets[i].draw();
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
