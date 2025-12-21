@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dancing Elves Audio Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0a1628 0%, #1a0a28 50%, #0a1628 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .main-title {
+            font-size: 4rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #ff6b6b);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease infinite;
+            text-shadow: 0 0 30px rgba(255, 107, 107, 0.5);
+            letter-spacing: 0.1em;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 5s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .instructions {
+            max-width: 600px;
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .instructions p {
+            margin: 0.5rem 0;
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .instructions ol {
+            text-align: left;
+            margin: 1rem 2rem;
+            color: #ccc;
+        }
+
+        .instructions li {
+            margin: 0.5rem 0;
+        }
+
+        #captureBtn {
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            margin-bottom: 1rem;
+        }
+
+        #captureBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(102, 126, 234, 0.6);
+        }
+
+        #captureBtn:active {
+            transform: translateY(0);
+        }
+
+        #captureBtn.capturing {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        #stopBtn {
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 2rem;
+            display: none;
+        }
+
+        #stopBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(245, 87, 108, 0.6);
+        }
+
+        #status {
+            margin-bottom: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .status-idle { background: rgba(255, 255, 255, 0.1); }
+        .status-capturing { background: rgba(78, 205, 196, 0.3); color: #4ecdc4; }
+        .status-error { background: rgba(255, 107, 107, 0.3); color: #ff6b6b; }
+
+        .canvas-container {
+            position: relative;
+            width: 90vw;
+            max-width: 1200px;
+            height: 55vh;
+            background: linear-gradient(180deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #visualizer {
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.8rem 1.2rem;
+            border-radius: 10px;
+        }
+
+        .control-group label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 0.3rem;
+        }
+
+        .control-group select,
+        .control-group input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+
+        .control-group input[type="range"] {
+            width: 100px;
+        }
+
+        .freq-info {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2rem;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 0.5rem 1.5rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .freq-info span {
+            color: #4ecdc4;
+        }
+
+        .freq-legend {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        .freq-legend div {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-bass { background: #ff6b6b; }
+        .legend-mid { background: #4ecdc4; }
+        .legend-treble { background: #ffd93d; }
+    </style>
+</head>
+<body>
+    <div class="main-title">Claude Opus 4.5</div>
+    <h1>🎄 Dancing Elves Audio Visualizer 🎄</h1>
+    
+    <div class="instructions">
+        <p><strong>How to use:</strong></p>
+        <ol>
+            <li>Open YouTube in another tab and play a video</li>
+            <li>Click "Capture YouTube Audio" below</li>
+            <li><strong>Chrome/Edge (recommended):</strong> Click "Chrome Tab" or "Edge Tab" at the top, select the YouTube tab, check ☑️ "Share tab audio"</li>
+            <li><strong>Firefox:</strong> Select the Firefox window (not screen), check ☑️ "Share audio"</li>
+            <li>Watch the elves dance to the music! 🧝</li>
+        </ol>
+        <p style="color: #6bcb77; margin-top: 1rem;">🎅 Elves react to different frequencies: Bass (red) | Mid (cyan) | Treble (yellow)</p>
+    </div>
+
+    <div id="status" class="status-idle">Ready to capture audio</div>
+    
+    <button id="captureBtn">🎤 Capture YouTube Audio</button>
+    <button id="stopBtn">⏹ Stop Capture</button>
+
+    <div class="canvas-container">
+        <canvas id="visualizer"></canvas>
+        <div class="freq-info">
+            <div>Bass: <span id="bassLevel">0</span></div>
+            <div>Mid: <span id="midLevel">0</span></div>
+            <div>Treble: <span id="trebleLevel">0</span></div>
+            <div>Peak: <span id="peakFreq">0 Hz</span></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Elf Count</label>
+            <select id="elfCount">
+                <option value="3">3 elves</option>
+                <option value="5" selected>5 elves</option>
+                <option value="7">7 elves</option>
+                <option value="9">9 elves</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Dance Style</label>
+            <select id="danceStyle">
+                <option value="bounce">Bounce</option>
+                <option value="wave">Wave</option>
+                <option value="crazy" selected>Crazy</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Smoothing</label>
+            <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.7">
+        </div>
+        <div class="control-group">
+            <label>FFT Size</label>
+            <select id="fftSize">
+                <option value="512">512</option>
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+                <option value="4096">4096</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="freq-legend">
+        <div><span class="legend-dot legend-bass"></span> Bass Elves</div>
+        <div><span class="legend-dot legend-mid"></span> Mid Elves</div>
+        <div><span class="legend-dot legend-treble"></span> Treble Elves</div>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const captureBtn = document.getElementById('captureBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const smoothingSlider = document.getElementById('smoothing');
+        const fftSizeSelect = document.getElementById('fftSize');
+        const elfCountSelect = document.getElementById('elfCount');
+        const danceStyleSelect = document.getElementById('danceStyle');
+        
+        // Frequency info elements
+        const bassLevelEl = document.getElementById('bassLevel');
+        const midLevelEl = document.getElementById('midLevel');
+        const trebleLevelEl = document.getElementById('trebleLevel');
+        const peakFreqEl = document.getElementById('peakFreq');
+
+        // Audio context and nodes
+        let audioContext = null;
+        let analyser = null;
+        let sourceNode = null;
+        let mediaStream = null;
+        let animationId = null;
+        let dataArray = null;
+        let frequencyData = null;
+        
+        // Elf properties
+        let elfCount = 5;
+        let elves = [];
+        let time = 0;
+        let bassLevel = 0;
+        let midLevel = 0;
+        let trebleLevel = 0;
+
+        // Elf class
+        class Elf {
+            constructor(x, type, index) {
+                this.x = x;
+                this.baseY = 0;
+                this.y = 0;
+                this.type = type; // 'bass', 'mid', 'treble'
+                this.index = index;
+                this.armAngle = 0;
+                this.legAngle = 0;
+                this.bodyBob = 0;
+                this.hatWiggle = 0;
+                this.scale = 1;
+                this.rotation = 0;
+            }
+
+            getColor() {
+                switch(this.type) {
+                    case 'bass': return { main: '#ff6b6b', secondary: '#c0392b', hat: '#e74c3c' };
+                    case 'mid': return { main: '#4ecdc4', secondary: '#16a085', hat: '#1abc9c' };
+                    case 'treble': return { main: '#ffd93d', secondary: '#f39c12', hat: '#f1c40f' };
+                }
+            }
+
+            getIntensity() {
+                switch(this.type) {
+                    case 'bass': return bassLevel / 255;
+                    case 'mid': return midLevel / 255;
+                    case 'treble': return trebleLevel / 255;
+                }
+            }
+
+            update(danceStyle) {
+                const intensity = this.getIntensity();
+                const t = time * 0.1;
+                
+                switch(danceStyle) {
+                    case 'bounce':
+                        this.bodyBob = Math.sin(t + this.index) * 20 * intensity;
+                        this.armAngle = Math.sin(t * 2 + this.index) * 45 * intensity;
+                        this.legAngle = Math.sin(t * 2 + this.index + Math.PI) * 20 * intensity;
+                        this.scale = 1 + intensity * 0.2;
+                        this.hatWiggle = Math.sin(t * 3) * 10 * intensity;
+                        break;
+                    case 'wave':
+                        this.bodyBob = Math.sin(t * 0.5 + this.index * 0.5) * 30 * intensity;
+                        this.armAngle = Math.sin(t + this.index * 0.3) * 60 * intensity;
+                        this.legAngle = Math.cos(t + this.index * 0.3) * 15 * intensity;
+                        this.scale = 1 + Math.sin(t + this.index) * 0.1 * intensity;
+                        this.rotation = Math.sin(t * 0.5 + this.index) * 5 * intensity;
+                        this.hatWiggle = Math.cos(t * 2) * 15 * intensity;
+                        break;
+                    case 'crazy':
+                        this.bodyBob = Math.sin(t * 3 + this.index) * 40 * intensity;
+                        this.armAngle = Math.sin(t * 4 + this.index) * 90 * intensity;
+                        this.legAngle = Math.sin(t * 4 + this.index + Math.PI/2) * 40 * intensity;
+                        this.scale = 1 + Math.abs(Math.sin(t * 2)) * 0.3 * intensity;
+                        this.rotation = Math.sin(t * 2 + this.index) * 15 * intensity;
+                        this.hatWiggle = Math.sin(t * 5) * 20 * intensity;
+                        break;
+                }
+                
+                this.y = this.baseY - Math.abs(this.bodyBob);
+            }
+
+            draw(ctx) {
+                const colors = this.getColor();
+                const intensity = this.getIntensity();
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation * Math.PI / 180);
+                ctx.scale(this.scale, this.scale);
+                
+                // Glow effect based on intensity
+                if (intensity > 0.3) {
+                    ctx.shadowColor = colors.main;
+                    ctx.shadowBlur = 20 * intensity;
+                }
+                
+                const elfHeight = 80;
+                
+                // Legs
+                ctx.save();
+                ctx.translate(-10, 0);
+                ctx.rotate(this.legAngle * Math.PI / 180);
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillRect(-5, 0, 10, 30);
+                // Shoe
+                ctx.fillStyle = colors.secondary;
+                ctx.beginPath();
+                ctx.ellipse(5, 30, 12, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                ctx.save();
+                ctx.translate(10, 0);
+                ctx.rotate(-this.legAngle * Math.PI / 180);
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillRect(-5, 0, 10, 30);
+                // Shoe
+                ctx.fillStyle = colors.secondary;
+                ctx.beginPath();
+                ctx.ellipse(5, 30, 12, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Body (tunic)
+                ctx.fillStyle = colors.main;
+                ctx.beginPath();
+                ctx.moveTo(-20, 0);
+                ctx.lineTo(20, 0);
+                ctx.lineTo(25, -40);
+                ctx.lineTo(-25, -40);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Belt
+                ctx.fillStyle = '#2c3e50';
+                ctx.fillRect(-22, -25, 44, 8);
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(0, -21, 6, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Arms
+                ctx.save();
+                ctx.translate(-25, -35);
+                ctx.rotate((-45 + this.armAngle) * Math.PI / 180);
+                ctx.fillStyle = colors.main;
+                ctx.fillRect(-5, 0, 10, 25);
+                // Hand
+                ctx.fillStyle = '#fdbf6f';
+                ctx.beginPath();
+                ctx.arc(0, 28, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                ctx.save();
+                ctx.translate(25, -35);
+                ctx.rotate((45 - this.armAngle) * Math.PI / 180);
+                ctx.fillStyle = colors.main;
+                ctx.fillRect(-5, 0, 10, 25);
+                // Hand
+                ctx.fillStyle = '#fdbf6f';
+                ctx.beginPath();
+                ctx.arc(0, 28, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                // Head
+                ctx.fillStyle = '#fdbf6f';
+                ctx.beginPath();
+                ctx.arc(0, -55, 18, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Ears (pointy elf ears!)
+                ctx.fillStyle = '#fdbf6f';
+                ctx.beginPath();
+                ctx.moveTo(-18, -55);
+                ctx.lineTo(-30, -65);
+                ctx.lineTo(-20, -50);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(18, -55);
+                ctx.lineTo(30, -65);
+                ctx.lineTo(20, -50);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = '#2c3e50';
+                ctx.beginPath();
+                ctx.ellipse(-7, -58, 3, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(7, -58, 3, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eye shine
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(-6, -59, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(8, -59, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Cheeks (rosy)
+                ctx.fillStyle = 'rgba(255, 150, 150, 0.5)';
+                ctx.beginPath();
+                ctx.ellipse(-12, -50, 5, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(12, -50, 5, 3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Smile
+                ctx.strokeStyle = '#c0392b';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, -52, 8, 0.2, Math.PI - 0.2);
+                ctx.stroke();
+                
+                // Hat
+                ctx.save();
+                ctx.translate(0, -73);
+                ctx.rotate(this.hatWiggle * Math.PI / 180);
+                
+                ctx.fillStyle = colors.hat;
+                ctx.beginPath();
+                ctx.moveTo(-20, 5);
+                ctx.lineTo(20, 5);
+                ctx.lineTo(5, -40);
+                ctx.quadraticCurveTo(15, -35, 20, -25);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Hat band
+                ctx.fillStyle = 'white';
+                ctx.fillRect(-22, 0, 44, 8);
+                
+                // Pom pom
+                ctx.beginPath();
+                ctx.arc(22, -23, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+                
+                ctx.restore();
+            }
+        }
+
+        // Initialize elves
+        function initElves() {
+            elves = [];
+            const types = ['bass', 'mid', 'treble'];
+            const spacing = canvas.width / (elfCount + 1);
+            
+            for (let i = 0; i < elfCount; i++) {
+                const x = spacing * (i + 1);
+                const type = types[i % 3];
+                const elf = new Elf(x, type, i);
+                elf.baseY = canvas.height - 80;
+                elves.push(elf);
+            }
+        }
+
+        // Resize canvas to container
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            initElves();
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Set status message
+        function setStatus(message, type = 'idle') {
+            statusEl.textContent = message;
+            statusEl.className = `status-${type}`;
+        }
+
+        // Capture YouTube audio
+        async function captureAudio() {
+            try {
+                setStatus('Requesting tab audio...', 'idle');
+                
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        displaySurface: "browser"
+                    },
+                    audio: {
+                        suppressLocalAudioPlayback: false,
+                        autoGainControl: false,
+                        echoCancellation: false,
+                        noiseSuppression: false
+                    },
+                    preferCurrentTab: false,
+                    selfBrowserSurface: "exclude",
+                    systemAudio: "include"
+                });
+                
+                mediaStream.getVideoTracks().forEach(track => track.stop());
+
+                const audioTracks = mediaStream.getAudioTracks();
+                
+                if (audioTracks.length === 0) {
+                    throw new Error('No audio track captured. Make sure to select a TAB and check "Share tab audio"!');
+                }
+
+                setStatus(`Capturing: ${audioTracks[0].label}`, 'capturing');
+                
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = parseInt(fftSizeSelect.value);
+                analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+                
+                sourceNode = audioContext.createMediaStreamSource(mediaStream);
+                sourceNode.connect(analyser);
+                
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                frequencyData = new Uint8Array(bufferLength);
+                
+                captureBtn.classList.add('capturing');
+                captureBtn.textContent = '🎵 Capturing...';
+                stopBtn.style.display = 'inline-block';
+                
+                mediaStream.getAudioTracks()[0].onended = () => {
+                    stopCapture();
+                };
+                
+                visualize();
+                
+            } catch (error) {
+                console.error('Error capturing audio:', error);
+                setStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Stop audio capture
+        function stopCapture() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            
+            if (sourceNode) {
+                sourceNode.disconnect();
+                sourceNode = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            analyser = null;
+            
+            captureBtn.classList.remove('capturing');
+            captureBtn.textContent = '🎤 Capture YouTube Audio';
+            stopBtn.style.display = 'none';
+            setStatus('Ready to capture audio', 'idle');
+            
+            drawIdleState();
+        }
+
+        // Draw background with snow and stage
+        function drawBackground() {
+            // Sky gradient
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            skyGradient.addColorStop(0, '#0d1b2a');
+            skyGradient.addColorStop(0.6, '#1b263b');
+            skyGradient.addColorStop(1, '#415a77');
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Stars
+            ctx.fillStyle = 'white';
+            for (let i = 0; i < 50; i++) {
+                const x = (i * 137 + time * 0.1) % canvas.width;
+                const y = (i * 89) % (canvas.height * 0.5);
+                const size = 1 + Math.sin(time * 0.05 + i) * 0.5;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Moon
+            ctx.fillStyle = '#ffeaa7';
+            ctx.beginPath();
+            ctx.arc(canvas.width - 100, 80, 40, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#0d1b2a';
+            ctx.beginPath();
+            ctx.arc(canvas.width - 85, 75, 35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Snow ground
+            ctx.fillStyle = '#ecf0f1';
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - 50);
+            for (let x = 0; x <= canvas.width; x += 50) {
+                ctx.lineTo(x, canvas.height - 50 + Math.sin(x * 0.02 + time * 0.02) * 10);
+            }
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Stage/platform
+            ctx.fillStyle = '#8b4513';
+            ctx.fillRect(50, canvas.height - 70, canvas.width - 100, 25);
+            ctx.fillStyle = '#a0522d';
+            ctx.fillRect(50, canvas.height - 70, canvas.width - 100, 5);
+            
+            // Snowflakes
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            for (let i = 0; i < 30; i++) {
+                const x = (i * 97 + time * (0.5 + i * 0.02)) % canvas.width;
+                const y = (i * 73 + time * (1 + i * 0.01)) % canvas.height;
+                const size = 2 + (i % 3);
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Christmas trees on sides
+            drawTree(80, canvas.height - 90, 0.8);
+            drawTree(canvas.width - 80, canvas.height - 90, 0.8);
+        }
+
+        function drawTree(x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            
+            // Trunk
+            ctx.fillStyle = '#8b4513';
+            ctx.fillRect(-8, 0, 16, 30);
+            
+            // Tree layers
+            ctx.fillStyle = '#228b22';
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, -40 - i * 35);
+                ctx.lineTo(-40 + i * 10, -i * 35);
+                ctx.lineTo(40 - i * 10, -i * 35);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // Star on top
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath();
+            const starY = -140;
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 144 - 90) * Math.PI / 180;
+                const r = i % 2 === 0 ? 12 : 5;
+                ctx.lineTo(Math.cos(angle) * r, starY + Math.sin(angle) * r);
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            // Ornaments
+            const ornamentColors = ['#ff6b6b', '#ffd93d', '#4ecdc4', '#9b59b6'];
+            for (let i = 0; i < 6; i++) {
+                ctx.fillStyle = ornamentColors[i % ornamentColors.length];
+                ctx.beginPath();
+                const ox = -25 + (i % 3) * 25 + Math.sin(i) * 10;
+                const oy = -20 - Math.floor(i / 3) * 40;
+                ctx.arc(ox, oy, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            ctx.restore();
+        }
+
+        // Main visualization function
+        function visualize() {
+            if (!analyser) return;
+            
+            animationId = requestAnimationFrame(visualize);
+            time++;
+            
+            // Get frequency data
+            analyser.getByteFrequencyData(frequencyData);
+            
+            // Calculate frequency band levels
+            const bufferLength = analyser.frequencyBinCount;
+            const bassEnd = Math.floor(bufferLength * 0.1);
+            const midEnd = Math.floor(bufferLength * 0.5);
+            
+            let bassSum = 0, midSum = 0, trebleSum = 0;
+            let peakValue = 0, peakIndex = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const value = frequencyData[i];
+                if (i < bassEnd) bassSum += value;
+                else if (i < midEnd) midSum += value;
+                else trebleSum += value;
+                
+                if (value > peakValue) {
+                    peakValue = value;
+                    peakIndex = i;
+                }
+            }
+            
+            bassLevel = Math.round(bassSum / bassEnd);
+            midLevel = Math.round(midSum / (midEnd - bassEnd));
+            trebleLevel = Math.round(trebleSum / (bufferLength - midEnd));
+            
+            // Calculate peak frequency
+            const nyquist = audioContext.sampleRate / 2;
+            const peakFreq = Math.round((peakIndex / bufferLength) * nyquist);
+            
+            // Update info display
+            bassLevelEl.textContent = bassLevel;
+            midLevelEl.textContent = midLevel;
+            trebleLevelEl.textContent = trebleLevel;
+            peakFreqEl.textContent = `${peakFreq} Hz`;
+            
+            // Draw scene
+            drawBackground();
+            
+            // Update and draw elves
+            const danceStyle = danceStyleSelect.value;
+            for (const elf of elves) {
+                elf.update(danceStyle);
+                elf.draw(ctx);
+            }
+            
+            // Draw frequency bars at bottom
+            drawMiniSpectrum();
+        }
+
+        function drawMiniSpectrum() {
+            const barWidth = 4;
+            const barSpacing = 2;
+            const numBars = Math.floor((canvas.width - 120) / (barWidth + barSpacing));
+            const startX = 60;
+            
+            for (let i = 0; i < numBars; i++) {
+                const dataIndex = Math.floor(i / numBars * frequencyData.length * 0.5);
+                const value = frequencyData[dataIndex] / 255;
+                const barHeight = value * 30;
+                
+                // Color based on frequency range
+                let color;
+                if (i < numBars * 0.2) {
+                    color = `rgba(255, 107, 107, ${0.5 + value * 0.5})`;
+                } else if (i < numBars * 0.6) {
+                    color = `rgba(78, 205, 196, ${0.5 + value * 0.5})`;
+                } else {
+                    color = `rgba(255, 217, 61, ${0.5 + value * 0.5})`;
+                }
+                
+                ctx.fillStyle = color;
+                ctx.fillRect(
+                    startX + i * (barWidth + barSpacing),
+                    canvas.height - 15 - barHeight,
+                    barWidth,
+                    barHeight
+                );
+            }
+        }
+
+        function drawIdleState() {
+            drawBackground();
+            for (const elf of elves) {
+                elf.draw(ctx);
+            }
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '20px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText('Click "Capture YouTube Audio" to make the elves dance! 🎄', canvas.width / 2, canvas.height / 2 - 50);
+        }
+
+        // Update settings
+        function updateAnalyserSettings() {
+            if (analyser) {
+                analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+            }
+        }
+
+        function updateFFTSize() {
+            if (analyser && audioContext) {
+                analyser.fftSize = parseInt(fftSizeSelect.value);
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                frequencyData = new Uint8Array(bufferLength);
+            }
+        }
+        
+        function updateElfCount() {
+            elfCount = parseInt(elfCountSelect.value);
+            initElves();
+        }
+
+        // Event listeners
+        captureBtn.addEventListener('click', captureAudio);
+        stopBtn.addEventListener('click', stopCapture);
+        smoothingSlider.addEventListener('input', updateAnalyserSettings);
+        fftSizeSelect.addEventListener('change', updateFFTSize);
+        elfCountSelect.addEventListener('change', updateElfCount);
+
+        // Initialize
+        initElves();
+        drawIdleState();
+        
+        // Idle animation
+        function idleAnimation() {
+            if (!analyser) {
+                time++;
+                bassLevel = 50 + Math.sin(time * 0.05) * 30;
+                midLevel = 50 + Math.cos(time * 0.07) * 30;
+                trebleLevel = 50 + Math.sin(time * 0.09) * 30;
+                
+                drawBackground();
+                const danceStyle = danceStyleSelect.value;
+                for (const elf of elves) {
+                    elf.update(danceStyle);
+                    elf.draw(ctx);
+                }
+                
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.font = '18px Segoe UI';
+                ctx.textAlign = 'center';
+                ctx.fillText('🎵 Click "Capture YouTube Audio" to make the elves dance! 🎵', canvas.width / 2, 40);
+            }
+            requestAnimationFrame(idleAnimation);
+        }
+        idleAnimation();
+    </script>
+</body>
+</html>
