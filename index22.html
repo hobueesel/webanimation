@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Audio Spectral Analyzer</title>
+    <title>Dancing Elves Audio Visualizer</title>
     <style>
         * {
             margin: 0;
@@ -12,7 +12,7 @@
         }
 
         body {
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%);
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -24,15 +24,29 @@
             overflow-x: hidden;
         }
 
-        h1 {
-            font-size: 2rem;
-            margin-bottom: 1rem;
-            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+        .page-title {
+            font-size: 3.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #ff0000, #00ff00, #ffffff, #ff0000);
             background-size: 300% 300%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
             animation: gradientShift 5s ease infinite;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, #ff0000, #00ff00, #ffffff, #ff0000);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 5s ease infinite;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
         }
 
         @keyframes gradientShift {
@@ -194,8 +208,7 @@
         }
     </style>
 </head>
-<body>
-    <h1>🎵 YouTube Audio Spectral Analyzer</h1>
+<body>    <div class="page-title">Gemini 3.0 pro</div>    <h1>� Dancing Elves Audio Visualizer 🎄</h1>
     
     <div class="instructions">
         <p><strong>How to use:</strong></p>
@@ -227,23 +240,13 @@
 
     <div class="controls">
         <div class="control-group">
-            <label>Bar Count</label>
+            <label>Elf Count</label>
             <select id="barCount">
-                <option value="16">16 bars</option>
-                <option value="24">24 bars</option>
-                <option value="32" selected>32 bars</option>
-                <option value="48">48 bars</option>
-                <option value="64">64 bars</option>
-            </select>
-        </div>
-        <div class="control-group">
-            <label>Color Scheme</label>
-            <select id="colorScheme">
-                <option value="winamp">Winamp Classic</option>
-                <option value="fire">Fire</option>
-                <option value="ocean">Ocean</option>
-                <option value="neon">Neon</option>
-                <option value="mono">Green Mono</option>
+                <option value="8">8 Elves</option>
+                <option value="12">12 Elves</option>
+                <option value="16" selected>16 Elves</option>
+                <option value="24">24 Elves</option>
+                <option value="32">32 Elves</option>
             </select>
         </div>
         <div class="control-group">
@@ -271,7 +274,6 @@
         const captureBtn = document.getElementById('captureBtn');
         const stopBtn = document.getElementById('stopBtn');
         const statusEl = document.getElementById('status');
-        const colorSchemeSelect = document.getElementById('colorScheme');
         const smoothingSlider = document.getElementById('smoothing');
         const fftSizeSelect = document.getElementById('fftSize');
         const barCountSelect = document.getElementById('barCount');
@@ -291,10 +293,8 @@
         let dataArray = null;
         let frequencyData = null;
         
-        // Winamp-style peaks
-        let peaks = [];
-        let peakFallSpeed = 0.5;
-        let barCount = 32;
+        // Elf settings
+        let barCount = 16;
 
         // Resize canvas to container
         function resizeCanvas() {
@@ -309,44 +309,6 @@
         function setStatus(message, type = 'idle') {
             statusEl.textContent = message;
             statusEl.className = `status-${type}`;
-        }
-
-        // Color schemes - Winamp style gradients
-        const colorSchemes = {
-            winamp: (ratio) => {
-                // Classic Winamp: green -> yellow -> red
-                if (ratio < 0.5) {
-                    const g = 255;
-                    const r = Math.floor(ratio * 2 * 255);
-                    return `rgb(${r}, ${g}, 0)`;
-                } else {
-                    const r = 255;
-                    const g = Math.floor((1 - (ratio - 0.5) * 2) * 255);
-                    return `rgb(${r}, ${g}, 0)`;
-                }
-            },
-            fire: (ratio) => {
-                if (ratio < 0.33) return `rgb(${Math.floor(ratio * 3 * 255)}, 0, 0)`;
-                if (ratio < 0.66) return `rgb(255, ${Math.floor((ratio - 0.33) * 3 * 200)}, 0)`;
-                return `rgb(255, ${200 + Math.floor((ratio - 0.66) * 3 * 55)}, ${Math.floor((ratio - 0.66) * 3 * 150)})`;
-            },
-            ocean: (ratio) => {
-                return `rgb(0, ${Math.floor(100 + ratio * 155)}, ${Math.floor(150 + ratio * 105)})`;
-            },
-            neon: (ratio) => {
-                const hue = 280 - ratio * 200; // Purple to cyan
-                return `hsl(${hue}, 100%, 50%)`;
-            },
-            mono: (ratio) => {
-                const brightness = Math.floor(100 + ratio * 155);
-                return `rgb(0, ${brightness}, 0)`;
-            }
-        };
-
-        // Get color based on bar height ratio
-        function getBarColor(heightRatio) {
-            const scheme = colorSchemeSelect.value;
-            return colorSchemes[scheme](heightRatio);
         }
 
         // Capture YouTube audio
@@ -404,9 +366,6 @@
                 const bufferLength = analyser.frequencyBinCount;
                 dataArray = new Uint8Array(bufferLength);
                 frequencyData = new Uint8Array(bufferLength);
-                
-                // Initialize peaks array
-                peaks = new Array(barCount).fill(0);
                 
                 // Update UI
                 captureBtn.classList.add('capturing');
@@ -505,25 +464,23 @@
             trebleLevelEl.textContent = trebleLevel;
             peakFreqEl.textContent = `${peakFreq} Hz`;
             
-            // Draw Winamp-style spectrum analyzer
-            drawWinampBars();
+            // Draw Dancing Elves
+            drawDancingElves();
         }
 
-        // Winamp-style frequency bars with peak indicators
-        function drawWinampBars() {
+        // Draw Dancing Elves based on frequency
+        function drawDancingElves() {
             const bufferLength = analyser.frequencyBinCount;
             
             // Clear canvas with dark background
-            ctx.fillStyle = '#0a0a0a';
+            ctx.fillStyle = '#0f2027';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Calculate bar dimensions
-            const gap = 2;
-            const totalGaps = (barCount - 1) * gap;
-            const barWidth = (canvas.width - totalGaps - 20) / barCount;
-            const maxBarHeight = canvas.height - 40;
+            // Calculate elf dimensions
+            const elfWidth = canvas.width / barCount;
+            const maxElfHeight = canvas.height * 0.8;
             
-            // Group frequency bins into bars (logarithmic distribution for better bass representation)
+            // Group frequency bins into bars (logarithmic distribution)
             const barValues = new Array(barCount).fill(0);
             
             for (let i = 0; i < barCount; i++) {
@@ -546,54 +503,88 @@
                 }
             }
             
-            // Draw each bar
+            // Draw each elf
             for (let i = 0; i < barCount; i++) {
-                const x = 10 + i * (barWidth + gap);
-                const normalizedValue = barValues[i] / 255;
-                const barHeight = normalizedValue * maxBarHeight;
+                const x = i * elfWidth + elfWidth / 2;
+                const intensity = barValues[i] / 255;
+                const y = canvas.height - 50;
                 
-                // Update peak
-                if (barHeight > peaks[i]) {
-                    peaks[i] = barHeight;
-                } else {
-                    peaks[i] = Math.max(0, peaks[i] - peakFallSpeed);
-                }
-                
-                // Draw bar segments (Winamp style - segmented bars)
-                const segmentHeight = 4;
-                const segmentGap = 1;
-                const numSegments = Math.floor(barHeight / (segmentHeight + segmentGap));
-                
-                for (let j = 0; j < numSegments; j++) {
-                    const segmentY = canvas.height - 20 - (j + 1) * (segmentHeight + segmentGap);
-                    const heightRatio = j / (maxBarHeight / (segmentHeight + segmentGap));
-                    
-                    ctx.fillStyle = getBarColor(heightRatio);
-                    ctx.fillRect(x, segmentY, barWidth, segmentHeight);
-                }
-                
-                // Draw peak indicator
-                if (peaks[i] > 2) {
-                    const peakY = canvas.height - 20 - peaks[i];
-                    const peakHeightRatio = peaks[i] / maxBarHeight;
-                    ctx.fillStyle = getBarColor(peakHeightRatio);
-                    ctx.shadowColor = getBarColor(peakHeightRatio);
-                    ctx.shadowBlur = 5;
-                    ctx.fillRect(x, peakY, barWidth, 3);
-                    ctx.shadowBlur = 0;
-                }
+                drawElf(x, y, intensity, elfWidth * 0.8);
             }
+        }
+
+        function drawElf(x, y, intensity, width) {
+            const height = 100 + intensity * 100;
+            const headRadius = width * 0.3;
+            const bodyHeight = height * 0.4;
+            const legLength = height * 0.3;
+            const armLength = height * 0.25;
             
-            // Draw frequency labels
-            ctx.fillStyle = '#666';
-            ctx.font = '10px monospace';
-            ctx.textAlign = 'center';
-            const freqLabels = ['60', '150', '400', '1k', '2.5k', '6k', '16k'];
-            const labelPositions = [0.05, 0.12, 0.25, 0.4, 0.55, 0.75, 0.95];
-            for (let i = 0; i < freqLabels.length; i++) {
-                const x = 10 + labelPositions[i] * (canvas.width - 20);
-                ctx.fillText(freqLabels[i], x, canvas.height - 5);
-            }
+            ctx.save();
+            ctx.translate(x, y);
+            
+            // Jump based on intensity
+            const jumpHeight = intensity * 50;
+            ctx.translate(0, -jumpHeight);
+            
+            // Color based on intensity
+            const hue = 120 + intensity * 60; // Green to Cyan
+            ctx.strokeStyle = `hsl(${hue}, 70%, 60%)`;
+            ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            
+            // Head
+            ctx.beginPath();
+            ctx.arc(0, -bodyHeight - legLength - headRadius, headRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Hat
+            ctx.beginPath();
+            ctx.moveTo(-headRadius, -bodyHeight - legLength - headRadius * 0.5);
+            ctx.lineTo(headRadius, -bodyHeight - legLength - headRadius * 0.5);
+            ctx.lineTo(0, -bodyHeight - legLength - headRadius * 2.5 - intensity * 20); // Hat tip moves up
+            ctx.closePath();
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+            
+            // Body
+            ctx.beginPath();
+            ctx.moveTo(0, -bodyHeight - legLength);
+            ctx.lineTo(0, -legLength);
+            ctx.stroke();
+            
+            // Arms (wave based on intensity)
+            const armAngle = Math.sin(Date.now() / 200 + x) * intensity * 2;
+            
+            // Left Arm
+            ctx.beginPath();
+            ctx.moveTo(0, -bodyHeight - legLength + bodyHeight * 0.2);
+            ctx.lineTo(-armLength * Math.cos(armAngle), -bodyHeight - legLength + bodyHeight * 0.2 - armLength * Math.sin(armAngle));
+            ctx.stroke();
+            
+            // Right Arm
+            ctx.beginPath();
+            ctx.moveTo(0, -bodyHeight - legLength + bodyHeight * 0.2);
+            ctx.lineTo(armLength * Math.cos(armAngle), -bodyHeight - legLength + bodyHeight * 0.2 + armLength * Math.sin(armAngle));
+            ctx.stroke();
+            
+            // Legs (dance based on intensity)
+            const legSpread = width * 0.3 + intensity * width * 0.2;
+            
+            // Left Leg
+            ctx.beginPath();
+            ctx.moveTo(0, -legLength);
+            ctx.lineTo(-legSpread, 0);
+            ctx.stroke();
+            
+            // Right Leg
+            ctx.beginPath();
+            ctx.moveTo(0, -legLength);
+            ctx.lineTo(legSpread, 0);
+            ctx.stroke();
+            
+            ctx.restore();
         }
 
         // Update analyser settings
@@ -614,7 +605,6 @@
         
         function updateBarCount() {
             barCount = parseInt(barCountSelect.value);
-            peaks = new Array(barCount).fill(0);
         }
 
         // Event listeners
@@ -625,7 +615,7 @@
         barCountSelect.addEventListener('change', updateBarCount);
 
         // Draw initial empty state
-        ctx.fillStyle = '#0a0a0a';
+        ctx.fillStyle = '#0f2027';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.font = '20px Segoe UI';
