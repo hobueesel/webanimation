@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT-5.0-Codex Elven Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at top, #1b1f3a 0%, #0a0a0f 55%, #040404 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 24px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        h1 {
+            font-size: 3.4rem;
+            margin-bottom: 0.6rem;
+            letter-spacing: 0.12rem;
+            text-transform: uppercase;
+            color: #fefefe;
+            text-shadow: 0 8px 30px rgba(23, 189, 255, 0.4), 0 0 35px rgba(255, 0, 140, 0.35);
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 1.6rem;
+        }
+
+        .instructions {
+            max-width: 640px;
+            text-align: center;
+            margin-bottom: 2.2rem;
+            padding: 1.2rem;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(4px);
+        }
+
+        .instructions p {
+            margin: 0.55rem 0;
+            color: rgba(255, 255, 255, 0.68);
+            font-size: 0.95rem;
+        }
+
+        .instructions ol {
+            text-align: left;
+            margin: 1rem 2rem 0;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .instructions li {
+            margin: 0.45rem 0;
+        }
+
+        #captureBtn {
+            padding: 1rem 2.6rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #20e3b2 0%, #2cccff 50%, #ff99cc 100%);
+            color: #010101;
+            border: none;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 12px 35px rgba(44, 204, 255, 0.35);
+            margin-bottom: 0.8rem;
+        }
+
+        #captureBtn:hover {
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: 0 16px 45px rgba(32, 227, 178, 0.45);
+        }
+
+        #captureBtn:active {
+            transform: translateY(0) scale(0.99);
+        }
+
+        #captureBtn.capturing {
+            background: linear-gradient(135deg, #ffe066 0%, #ff6b6b 50%, #c056ff 100%);
+            color: #0a0a0a;
+        }
+
+        #stopBtn {
+            padding: 0.85rem 2.2rem;
+            font-size: 1.05rem;
+            background: linear-gradient(135deg, #ff6b6b 0%, #f093fb 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 2.1rem;
+            display: none;
+        }
+
+        #stopBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(240, 147, 251, 0.45);
+        }
+
+        #status {
+            margin-bottom: 1rem;
+            padding: 0.6rem 1.6rem;
+            border-radius: 24px;
+            font-size: 0.95rem;
+        }
+
+        .status-idle { background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.8); }
+        .status-capturing { background: rgba(46, 204, 113, 0.22); color: #2ecc71; }
+        .status-error { background: rgba(255, 99, 132, 0.25); color: #ff6b6b; }
+
+        .canvas-container {
+            position: relative;
+            width: min(92vw, 1200px);
+            height: clamp(340px, 52vh, 540px);
+            background: rgba(10, 12, 29, 0.72);
+            border-radius: 26px;
+            overflow: hidden;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        #visualizer {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1.1rem;
+            margin-top: 1.2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.85rem 1.25rem;
+            border-radius: 12px;
+        }
+
+        .control-group label {
+            font-size: 0.82rem;
+            color: rgba(255, 255, 255, 0.55);
+            margin-bottom: 0.35rem;
+        }
+
+        .control-group select,
+        .control-group input {
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 0.4rem 0.9rem;
+            border-radius: 6px;
+            font-size: 0.92rem;
+        }
+
+        .control-group input[type="range"] {
+            width: 110px;
+        }
+
+        .freq-info {
+            position: absolute;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1.9rem;
+            background: rgba(2, 8, 20, 0.76);
+            padding: 0.6rem 1.8rem;
+            border-radius: 22px;
+            font-size: 0.85rem;
+            letter-spacing: 0.03rem;
+        }
+
+        .freq-info span {
+            color: #20e3b2;
+        }
+
+        @media (max-width: 640px) {
+            h1 {
+                font-size: 2.6rem;
+            }
+
+            h2 {
+                font-size: 1.05rem;
+            }
+
+            .instructions {
+                padding: 0.9rem;
+            }
+
+            .freq-info {
+                flex-direction: column;
+                gap: 0.4rem;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>GPT-5.0-Codex</h1>
+    <h2>Dancing elves groove to your audio spectrum</h2>
+
+    <div class="instructions">
+        <p><strong>How to watch the elves dance:</strong></p>
+        <ol>
+            <li>Start music (YouTube tab recommended) in another browser tab.</li>
+            <li>Press "Capture YouTube Audio" below and pick the music tab.</li>
+            <li>Check the browser's "Share tab audio" option to feed the elves.</li>
+            <li>Bass, mid, and treble elves bounce in sync with their frequency bands.</li>
+        </ol>
+        <p style="color: #ff83d6; margin-top: 1.2rem; font-size: 0.9rem;">Tip: Chrome or Edge provide the smoothest capture experience.</p>
+    </div>
+
+    <div id="status" class="status-idle">Ready to capture audio</div>
+
+    <button id="captureBtn">🎤 Capture YouTube Audio</button>
+    <button id="stopBtn">⏹ Stop Capture</button>
+
+    <div class="canvas-container">
+        <canvas id="visualizer"></canvas>
+        <div class="freq-info">
+            <div>Bass Elf: <span id="bassLevel">0</span></div>
+            <div>Mid Elf: <span id="midLevel">0</span></div>
+            <div>Treble Elf: <span id="trebleLevel">0</span></div>
+            <div>Peak: <span id="peakFreq">0 Hz</span></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Smoothing</label>
+            <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.75">
+        </div>
+        <div class="control-group">
+            <label>FFT Size</label>
+            <select id="fftSize">
+                <option value="512">512</option>
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+                <option value="4096">4096</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+
+        const captureBtn = document.getElementById('captureBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const smoothingSlider = document.getElementById('smoothing');
+        const fftSizeSelect = document.getElementById('fftSize');
+
+        const bassLevelEl = document.getElementById('bassLevel');
+        const midLevelEl = document.getElementById('midLevel');
+        const trebleLevelEl = document.getElementById('trebleLevel');
+        const peakFreqEl = document.getElementById('peakFreq');
+
+        let audioContext = null;
+        let analyser = null;
+        let sourceNode = null;
+        let mediaStream = null;
+        let animationId = null;
+        let frequencyData = null;
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        function setStatus(message, type = 'idle') {
+            statusEl.textContent = message;
+            statusEl.className = `status-${type}`;
+        }
+
+        async function captureAudio() {
+            try {
+                setStatus('Requesting tab audio...', 'idle');
+
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { displaySurface: 'browser' },
+                    audio: {
+                        suppressLocalAudioPlayback: false,
+                        autoGainControl: false,
+                        echoCancellation: false,
+                        noiseSuppression: false
+                    },
+                    preferCurrentTab: false,
+                    selfBrowserSurface: 'exclude',
+                    systemAudio: 'include'
+                });
+
+                mediaStream.getVideoTracks().forEach(track => track.stop());
+
+                const audioTracks = mediaStream.getAudioTracks();
+                if (audioTracks.length === 0) {
+                    throw new Error('No audio track captured. Select a tab and enable "Share tab audio".');
+                }
+
+                setStatus(`Capturing: ${audioTracks[0].label}`, 'capturing');
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = parseInt(fftSizeSelect.value, 10);
+                analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+
+                sourceNode = audioContext.createMediaStreamSource(mediaStream);
+                sourceNode.connect(analyser);
+
+                frequencyData = new Uint8Array(analyser.frequencyBinCount);
+
+                captureBtn.classList.add('capturing');
+                captureBtn.textContent = '🎵 Capturing...';
+                stopBtn.style.display = 'inline-block';
+
+                mediaStream.getAudioTracks()[0].onended = () => {
+                    stopCapture();
+                };
+
+                visualize();
+            } catch (error) {
+                console.error('Error capturing audio:', error);
+                setStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function stopCapture() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            if (sourceNode) {
+                sourceNode.disconnect();
+                sourceNode = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            analyser = null;
+
+            captureBtn.classList.remove('capturing');
+            captureBtn.textContent = '🎤 Capture YouTube Audio';
+            stopBtn.style.display = 'none';
+            setStatus('Ready to capture audio', 'idle');
+
+            drawIdleStage();
+        }
+
+        function visualize(timestamp) {
+            if (!analyser) {
+                return;
+            }
+
+            animationId = requestAnimationFrame(visualize);
+            const time = timestamp || performance.now();
+
+            analyser.getByteFrequencyData(frequencyData);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const bassEnd = Math.floor(bufferLength * 0.12);
+            const midEnd = Math.floor(bufferLength * 0.45);
+
+            let bassSum = 0;
+            let midSum = 0;
+            let trebleSum = 0;
+            let peakValue = 0;
+            let peakIndex = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const value = frequencyData[i];
+                if (i < bassEnd) {
+                    bassSum += value;
+                } else if (i < midEnd) {
+                    midSum += value;
+                } else {
+                    trebleSum += value;
+                }
+
+                if (value > peakValue) {
+                    peakValue = value;
+                    peakIndex = i;
+                }
+            }
+
+            const bassLevel = Math.round(bassSum / Math.max(bassEnd, 1));
+            const midLevel = Math.round(midSum / Math.max(midEnd - bassEnd, 1));
+            const trebleLevel = Math.round(trebleSum / Math.max(bufferLength - midEnd, 1));
+
+            const nyquist = audioContext.sampleRate / 2;
+            const peakFreq = Math.round((peakIndex / bufferLength) * nyquist);
+
+            bassLevelEl.textContent = bassLevel;
+            midLevelEl.textContent = midLevel;
+            trebleLevelEl.textContent = trebleLevel;
+            peakFreqEl.textContent = `${peakFreq} Hz`;
+
+            drawElvenStage(bassLevel, midLevel, trebleLevel, time);
+        }
+
+        function drawIdleStage() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackdrop(performance.now());
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.font = '20px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText('Click "Capture YouTube Audio" to let the elves dance.', canvas.width / 2, canvas.height / 2);
+        }
+
+        function drawBackdrop(time) {
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, '#050b23');
+            gradient.addColorStop(0.45, '#0a1a36');
+            gradient.addColorStop(1, '#120a1f');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const sparkleCount = 45;
+            for (let i = 0; i < sparkleCount; i++) {
+                const x = ((i * 83) % canvas.width) + Math.sin(time * 0.0008 + i) * 18;
+                const y = (i * 47) % canvas.height;
+                const radius = 1.1 + Math.sin(time * 0.002 + i) * 0.7;
+                ctx.fillStyle = `rgba(80, 220, 255, ${0.18 + (i % 5) * 0.04})`;
+                ctx.beginPath();
+                ctx.arc(x, y, Math.max(radius, 0.3), 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = 'rgba(12, 18, 35, 0.92)';
+            ctx.fillRect(0, canvas.height - 70, canvas.width, 70);
+            ctx.fillStyle = 'rgba(57, 255, 186, 0.12)';
+            ctx.fillRect(0, canvas.height - 76, canvas.width, 6);
+        }
+
+        function drawElvenStage(bassLevel, midLevel, trebleLevel, time) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackdrop(time);
+
+            const elves = [
+                {
+                    label: 'Bass',
+                    level: bassLevel,
+                    color: '#2ecc71',
+                    accent: '#1abc9c',
+                    sparkle: '#a7ff83',
+                    x: canvas.width * 0.23
+                },
+                {
+                    label: 'Mid',
+                    level: midLevel,
+                    color: '#ffaf40',
+                    accent: '#ff6f91',
+                    sparkle: '#ffd480',
+                    x: canvas.width * 0.5
+                },
+                {
+                    label: 'Treble',
+                    level: trebleLevel,
+                    color: '#67d7ff',
+                    accent: '#c056ff',
+                    sparkle: '#8ce7ff',
+                    x: canvas.width * 0.77
+                }
+            ];
+
+            elves.forEach((elf, index) => {
+                drawElf(elf.x, elf.level, elf.color, elf.accent, elf.sparkle, time, index);
+                drawElfLabel(elf.x, elf.label, elf.level);
+            });
+        }
+
+        function drawElf(x, level, bodyColor, accentColor, sparkleColor, time, idx) {
+            const levelRatio = Math.min(level / 255, 1);
+            const groundY = canvas.height - 70;
+            const bounce = Math.sin(time * 0.004 + idx * 2) * (10 + levelRatio * 22);
+            const sway = Math.sin(time * 0.006 + idx) * (8 + levelRatio * 28);
+
+            const bodyHeight = 90 + levelRatio * 40;
+            const bodyWidth = 42 + levelRatio * 16;
+            const bodyBottom = groundY - bounce;
+            const bodyTop = bodyBottom - bodyHeight;
+            const headRadius = 18 + levelRatio * 6;
+            const headCenterY = bodyTop - headRadius + 10;
+
+            ctx.save();
+            ctx.translate(sway * 0.3, 0);
+
+            ctx.fillStyle = bodyColor;
+            ctx.beginPath();
+            ctx.moveTo(x, bodyTop + 10);
+            ctx.lineTo(x - bodyWidth / 2, bodyBottom);
+            ctx.lineTo(x + bodyWidth / 2, bodyBottom);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#ffe8c2';
+            ctx.beginPath();
+            ctx.ellipse(x, headCenterY, headRadius, headRadius * 1.08, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            const hatHeight = 34 + levelRatio * 18;
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.moveTo(x, headCenterY - headRadius - hatHeight + 8);
+            ctx.lineTo(x - headRadius * 0.9, headCenterY - headRadius + 6);
+            ctx.lineTo(x + headRadius * 0.9, headCenterY - headRadius + 6);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = sparkleColor;
+            ctx.beginPath();
+            ctx.arc(x, headCenterY - headRadius - hatHeight + 6, 4 + levelRatio * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#ffe8c2';
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            const armSpan = 32 + levelRatio * 24;
+            const armAngle = Math.sin(time * 0.01 + idx) * (0.8 + levelRatio * 0.6);
+            const armY = headCenterY + headRadius * 0.8;
+
+            ctx.beginPath();
+            ctx.moveTo(x - Math.cos(armAngle) * armSpan, armY + Math.sin(armAngle) * 12);
+            ctx.lineTo(x, armY);
+            ctx.lineTo(x + Math.cos(armAngle) * armSpan, armY + Math.sin(-armAngle) * 12);
+            ctx.stroke();
+
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = 6;
+            const legBounce = 14 + levelRatio * 26;
+            const step = Math.sin(time * 0.008 + idx * 0.8) * legBounce;
+            ctx.beginPath();
+            ctx.moveTo(x - 10, bodyBottom);
+            ctx.lineTo(x - 14, bodyBottom + 30 + step);
+            ctx.moveTo(x + 10, bodyBottom);
+            ctx.lineTo(x + 14, bodyBottom + 30 - step);
+            ctx.stroke();
+
+            if (levelRatio > 0.25) {
+                const sparkleCount = 6;
+                for (let i = 0; i < sparkleCount; i++) {
+                    const angle = (time * 0.002 + i * 1.1 + idx) % (Math.PI * 2);
+                    const radius = 32 + levelRatio * 26 + Math.sin(time * 0.003 + i) * 6;
+                    const sx = x + Math.cos(angle) * radius;
+                    const sy = headCenterY + Math.sin(angle) * radius * 0.6 - 18;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.18 + levelRatio * 0.4})`;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 2.2 + levelRatio * 2.1, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawElfLabel(x, label, level) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
+            ctx.font = '16px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${label} Elf`, x, canvas.height - 18);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+            ctx.font = '12px Segoe UI';
+            ctx.fillText(`Level: ${level}`, x, canvas.height - 4);
+        }
+
+        function updateAnalyserSettings() {
+            if (analyser) {
+                analyser.smoothingTimeConstant = parseFloat(smoothingSlider.value);
+            }
+        }
+
+        function updateFFTSize() {
+            if (analyser && audioContext) {
+                analyser.fftSize = parseInt(fftSizeSelect.value, 10);
+                frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            }
+        }
+
+        captureBtn.addEventListener('click', captureAudio);
+        stopBtn.addEventListener('click', stopCapture);
+        smoothingSlider.addEventListener('input', updateAnalyserSettings);
+        fftSizeSelect.addEventListener('change', updateFFTSize);
+
+        drawIdleStage();
+    </script>
+</body>
+</html>
