@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GPT-5.0 Elves Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 24px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            overflow-x: hidden;
+        }
+        /* Big Title */
+        h1.title {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            line-height: 1.1;
+            text-align: center;
+            letter-spacing: 2px;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 6s ease infinite;
+        }
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .instructions {
+            max-width: 720px;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            padding: 1rem 1.25rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .instructions p { color: #aaa; font-size: 0.95rem; }
+        .instructions ol { text-align: left; margin: 1rem 2rem; color: #ccc; }
+        .instructions li { margin: 0.5rem 0; }
+
+        #captureBtn {
+            padding: 1rem 2.5rem; font-size: 1.2rem; font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border: none; border-radius: 50px; cursor: pointer;
+            transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            margin-bottom: 1rem;
+        }
+        #captureBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(102, 126, 234, 0.6); }
+        #captureBtn:active { transform: translateY(0); }
+        #captureBtn.capturing { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+
+        #stopBtn {
+            padding: 0.8rem 2rem; font-size: 1rem;
+            background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+            color: white; border: none; border-radius: 50px; cursor: pointer;
+            transition: all 0.3s ease; margin-bottom: 2rem; display: none;
+        }
+        #stopBtn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(245, 87, 108, 0.6); }
+
+        #status { margin-bottom: 1rem; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; }
+        .status-idle { background: rgba(255, 255, 255, 0.1); }
+        .status-capturing { background: rgba(78, 205, 196, 0.3); color: #4ecdc4; }
+        .status-error { background: rgba(255, 107, 107, 0.3); color: #ff6b6b; }
+
+        .stage-container {
+            position: relative; width: 90vw; max-width: 1200px; height: 55vh;
+            background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.6));
+            border-radius: 20px; overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stage-floor {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 90px;
+            background: linear-gradient(180deg, rgba(40, 40, 40, 0.8), rgba(20, 20, 20, 0.95));
+        }
+        .snow {
+            position: absolute; inset: 0; pointer-events: none;
+            background-image: radial-gradient(white 1px, transparent 1px);
+            background-size: 3px 3px; opacity: 0.08;
+            animation: snowfall 12s linear infinite;
+        }
+        @keyframes snowfall {
+            from { transform: translateY(-10px); }
+            to { transform: translateY(10px); }
+        }
+
+        .elves-stage {
+            position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: space-around;
+            padding: 30px 40px 100px;
+        }
+        .elf { position: relative; width: 160px; height: 220px; transform-origin: 50% 100%; }
+        .elf .hat {
+            position: absolute; left: 50%; top: 0; transform: translateX(-50%);
+            width: 110px; height: 60px; background: #2ecc71; border-radius: 10px 10px 50px 50px;
+            box-shadow: 0 4px 0 #1e824c inset; border: 2px solid rgba(255,255,255,0.2);
+        }
+        .elf .hat::after {
+            content: ""; position: absolute; right: 8px; top: -18px; width: 22px; height: 22px;
+            background: #f1c40f; border-radius: 50%; box-shadow: 0 0 10px rgba(241,196,15,0.6);
+        }
+        .elf .head {
+            position: absolute; left: 50%; top: 44px; transform: translateX(-50%);
+            width: 90px; height: 80px; background: #ffd9b3; border-radius: 45px;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.15) inset;
+        }
+        .elf .ear { position: absolute; top: 26px; width: 18px; height: 18px; background: #ffd9b3; border-radius: 50%; }
+        .elf .ear.left { left: -10px; }
+        .elf .ear.right { right: -10px; }
+        .elf .eye { position: absolute; top: 34px; width: 10px; height: 10px; background: #2c3e50; border-radius: 50%; }
+        .elf .eye.left { left: 26px; }
+        .elf .eye.right { right: 26px; }
+        .elf .smile { position: absolute; left: 50%; bottom: 14px; width: 36px; height: 16px; transform: translateX(-50%);
+            border-bottom: 3px solid #c0392b; border-radius: 0 0 36px 36px; }
+
+        .elf .body {
+            position: absolute; left: 50%; top: 115px; transform: translateX(-50%);
+            width: 110px; height: 80px; background: #27ae60; border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        .elf .belt { position: absolute; left: 0; right: 0; top: 36px; height: 12px; background: #1a252f; }
+        .elf .arm { position: absolute; top: 8px; width: 18px; height: 60px; background: #27ae60; transform-origin: 50% 8px; border-radius: 12px; }
+        .elf .arm.left { left: -8px; }
+        .elf .arm.right { right: -8px; }
+
+        .elf .legs { position: absolute; left: 50%; top: 190px; transform: translateX(-50%); width: 120px; height: 36px; }
+        .elf .leg { position: absolute; bottom: 0; width: 20px; height: 36px; background: #2c3e50; border-radius: 10px; transform-origin: 50% 100%; }
+        .elf .leg.left { left: 24px; }
+        .elf .leg.right { right: 24px; }
+
+        /* Labels under each elf */
+        .elf-label { position: absolute; bottom: -42px; left: 50%; transform: translateX(-50%); color: #9bd7c9; font-weight: 600; font-size: 0.95rem; }
+
+        .freq-info {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 2rem; background: rgba(0, 0, 0, 0.7);
+            padding: 0.5rem 1.5rem; border-radius: 20px; font-size: 0.85rem;
+        }
+        .freq-info span { color: #4ecdc4; }
+    </style>
+</head>
+<body>
+    <h1 class="title">GPT-5.0</h1>
+
+    <div class="instructions">
+        <p><strong>How to use:</strong></p>
+        <ol>
+            <li>Open YouTube in another tab and play a video</li>
+            <li>Click "Capture YouTube Audio" below</li>
+            <li><strong>Chrome/Edge (recommended):</strong> Pick the YouTube tab and check ☑️ Share tab audio</li>
+            <li><strong>Firefox:</strong> Select the browser window and check ☑️ Share audio (FF support limited)</li>
+        </ol>
+        <p style="color: #ff6b6b; margin-top: 0.75rem;">Chrome or Edge recommended for best tab audio capture.</p>
+    </div>
+
+    <div id="status" class="status-idle">Ready to capture audio</div>
+    <button id="captureBtn">🎤 Capture YouTube Audio</button>
+    <button id="stopBtn">⏹ Stop Capture</button>
+
+    <div class="stage-container">
+        <div class="snow"></div>
+        <div class="elves-stage">
+            <!-- Bass Elf -->
+            <div class="elf" id="elf-bass">
+                <div class="hat"></div>
+                <div class="head">
+                    <div class="ear left"></div>
+                    <div class="ear right"></div>
+                    <div class="eye left"></div>
+                    <div class="eye right"></div>
+                    <div class="smile"></div>
+                </div>
+                <div class="body">
+                    <div class="arm left"></div>
+                    <div class="arm right"></div>
+                    <div class="belt"></div>
+                </div>
+                <div class="legs">
+                    <div class="leg left"></div>
+                    <div class="leg right"></div>
+                </div>
+                <div class="elf-label">Bass</div>
+            </div>
+            <!-- Mid Elf -->
+            <div class="elf" id="elf-mid">
+                <div class="hat"></div>
+                <div class="head">
+                    <div class="ear left"></div>
+                    <div class="ear right"></div>
+                    <div class="eye left"></div>
+                    <div class="eye right"></div>
+                    <div class="smile"></div>
+                </div>
+                <div class="body">
+                    <div class="arm left"></div>
+                    <div class="arm right"></div>
+                    <div class="belt"></div>
+                </div>
+                <div class="legs">
+                    <div class="leg left"></div>
+                    <div class="leg right"></div>
+                </div>
+                <div class="elf-label">Mid</div>
+            </div>
+            <!-- Treble Elf -->
+            <div class="elf" id="elf-treble">
+                <div class="hat"></div>
+                <div class="head">
+                    <div class="ear left"></div>
+                    <div class="ear right"></div>
+                    <div class="eye left"></div>
+                    <div class="eye right"></div>
+                    <div class="smile"></div>
+                </div>
+                <div class="body">
+                    <div class="arm left"></div>
+                    <div class="arm right"></div>
+                    <div class="belt"></div>
+                </div>
+                <div class="legs">
+                    <div class="leg left"></div>
+                    <div class="leg right"></div>
+                </div>
+                <div class="elf-label">Treble</div>
+            </div>
+        </div>
+        <div class="stage-floor"></div>
+        <div class="freq-info">
+            <div>Bass: <span id="bassLevel">0</span></div>
+            <div>Mid: <span id="midLevel">0</span></div>
+            <div>Treble: <span id="trebleLevel">0</span></div>
+            <div>Peak: <span id="peakFreq">0 Hz</span></div>
+        </div>
+    </div>
+
+    <script>
+        // UI Elements
+        const captureBtn = document.getElementById('captureBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusEl = document.getElementById('status');
+        const bassLevelEl = document.getElementById('bassLevel');
+        const midLevelEl = document.getElementById('midLevel');
+        const trebleLevelEl = document.getElementById('trebleLevel');
+        const peakFreqEl = document.getElementById('peakFreq');
+
+        // Elf parts
+        const elves = {
+            bass: {
+                root: document.getElementById('elf-bass'),
+                arms: {
+                    left: document.querySelector('#elf-bass .arm.left'),
+                    right: document.querySelector('#elf-bass .arm.right')
+                },
+                legs: {
+                    left: document.querySelector('#elf-bass .leg.left'),
+                    right: document.querySelector('#elf-bass .leg.right')
+                },
+                body: document.querySelector('#elf-bass .body')
+            },
+            mid: {
+                root: document.getElementById('elf-mid'),
+                arms: {
+                    left: document.querySelector('#elf-mid .arm.left'),
+                    right: document.querySelector('#elf-mid .arm.right')
+                },
+                legs: {
+                    left: document.querySelector('#elf-mid .leg.left'),
+                    right: document.querySelector('#elf-mid .leg.right')
+                },
+                body: document.querySelector('#elf-mid .body')
+            },
+            treble: {
+                root: document.getElementById('elf-treble'),
+                arms: {
+                    left: document.querySelector('#elf-treble .arm.left'),
+                    right: document.querySelector('#elf-treble .arm.right')
+                },
+                legs: {
+                    left: document.querySelector('#elf-treble .leg.left'),
+                    right: document.querySelector('#elf-treble .leg.right')
+                },
+                body: document.querySelector('#elf-treble .body')
+            }
+        };
+
+        // Audio context and nodes
+        let audioContext = null;
+        let analyser = null;
+        let sourceNode = null;
+        let mediaStream = null;
+        let frequencyData = null;
+        let animationId = null;
+
+        function setStatus(message, type = 'idle') {
+            statusEl.textContent = message;
+            statusEl.className = `status-${type}`;
+        }
+
+        async function captureAudio() {
+            try {
+                setStatus('Requesting tab audio...', 'idle');
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { displaySurface: 'browser' },
+                    audio: {
+                        suppressLocalAudioPlayback: false,
+                        autoGainControl: false,
+                        echoCancellation: false,
+                        noiseSuppression: false
+                    },
+                    preferCurrentTab: false,
+                    selfBrowserSurface: 'exclude',
+                    systemAudio: 'include'
+                });
+
+                // Stop video track immediately
+                mediaStream.getVideoTracks().forEach(t => t.stop());
+
+                const audioTracks = mediaStream.getAudioTracks();
+                if (audioTracks.length === 0) {
+                    throw new Error('No audio track captured. Select a TAB and check "Share tab audio".');
+                }
+
+                setStatus(`Capturing: ${audioTracks[0].label}`, 'capturing');
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 1024; // sensible default
+                analyser.smoothingTimeConstant = 0.8;
+
+                sourceNode = audioContext.createMediaStreamSource(mediaStream);
+                sourceNode.connect(analyser);
+
+                const bufferLength = analyser.frequencyBinCount;
+                frequencyData = new Uint8Array(bufferLength);
+
+                captureBtn.classList.add('capturing');
+                captureBtn.textContent = '🎵 Capturing...';
+                stopBtn.style.display = 'inline-block';
+
+                mediaStream.getAudioTracks()[0].onended = stopCapture;
+                visualize();
+            } catch (error) {
+                console.error(error);
+                setStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function stopCapture() {
+            if (animationId) { cancelAnimationFrame(animationId); animationId = null; }
+            if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+            if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+            if (audioContext) { audioContext.close(); audioContext = null; }
+            analyser = null;
+            captureBtn.classList.remove('capturing');
+            captureBtn.textContent = '🎤 Capture YouTube Audio';
+            stopBtn.style.display = 'none';
+            setStatus('Ready to capture audio', 'idle');
+        }
+
+        function visualize() {
+            if (!analyser) return;
+            animationId = requestAnimationFrame(visualize);
+
+            analyser.getByteFrequencyData(frequencyData);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const bassEnd = Math.floor(bufferLength * 0.1);
+            const midEnd = Math.floor(bufferLength * 0.5);
+
+            let bassSum = 0, midSum = 0, trebleSum = 0;
+            let peakValue = 0, peakIndex = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const value = frequencyData[i];
+                if (i < bassEnd) bassSum += value; else if (i < midEnd) midSum += value; else trebleSum += value;
+                if (value > peakValue) { peakValue = value; peakIndex = i; }
+            }
+
+            const bassLevel = Math.round(bassSum / bassEnd) || 0;
+            const midLevel = Math.round(midSum / (midEnd - bassEnd)) || 0;
+            const trebleLevel = Math.round(trebleSum / (bufferLength - midEnd)) || 0;
+
+            const nyquist = audioContext.sampleRate / 2;
+            const peakFreq = Math.round((peakIndex / bufferLength) * nyquist);
+
+            bassLevelEl.textContent = bassLevel;
+            midLevelEl.textContent = midLevel;
+            trebleLevelEl.textContent = trebleLevel;
+            peakFreqEl.textContent = `${peakFreq} Hz`;
+
+            updateElves(bassLevel, midLevel, trebleLevel);
+        }
+
+        // Map level (0-255) to movement ranges
+        function updateElves(bass, mid, treble) {
+            const now = performance.now() / 1000; // seconds
+
+            const bAmp = Math.min(1, bass / 255);
+            const mAmp = Math.min(1, mid / 255);
+            const tAmp = Math.min(1, treble / 255);
+
+            // Bass: big body bounces + wide leg kicks
+            const bBounce = Math.sin(now * (2 + bAmp * 6)) * (20 * bAmp);
+            const bKickL = Math.sin(now * (3 + bAmp * 5)) * (25 * bAmp);
+            const bKickR = Math.cos(now * (2.6 + bAmp * 4)) * (25 * bAmp);
+            const bArm = Math.sin(now * (2 + bAmp * 5)) * (35 * bAmp);
+
+            elves.bass.root.style.transform = `translateY(${-bBounce}px)`;
+            elves.bass.legs.left.style.transform = `rotate(${bKickL}deg)`;
+            elves.bass.legs.right.style.transform = `rotate(${bKickR}deg)`;
+            elves.bass.arms.left.style.transform = `rotate(${Math.max(-60, -20 - bArm)}deg)`;
+            elves.bass.arms.right.style.transform = `rotate(${Math.min(60, 20 + bArm)}deg)`;
+
+            // Mid: arm waves + moderate bounce
+            const mBounce = Math.sin(now * (3 + mAmp * 6)) * (14 * mAmp);
+            const mArmL = Math.sin(now * (4 + mAmp * 5)) * (30 * mAmp) - 10;
+            const mArmR = Math.cos(now * (4.4 + mAmp * 5)) * (30 * mAmp) + 10;
+            const mKick = Math.sin(now * (3.5 + mAmp * 4)) * (15 * mAmp);
+
+            elves.mid.root.style.transform = `translateY(${-mBounce}px)`;
+            elves.mid.arms.left.style.transform = `rotate(${mArmL}deg)`;
+            elves.mid.arms.right.style.transform = `rotate(${mArmR}deg)`;
+            elves.mid.legs.left.style.transform = `rotate(${mKick}deg)`;
+            elves.mid.legs.right.style.transform = `rotate(${-mKick}deg)`;
+
+            // Treble: quick arm flicks + head shimmy
+            const tBounce = Math.sin(now * (5 + tAmp * 8)) * (10 * tAmp);
+            const tArmL = Math.sin(now * (6 + tAmp * 7)) * (40 * tAmp);
+            const tArmR = Math.cos(now * (6.6 + tAmp * 7)) * (40 * tAmp);
+            const tShimmy = Math.sin(now * (7 + tAmp * 8)) * (6 * tAmp);
+
+            elves.treble.root.style.transform = `translateY(${-tBounce}px) rotate(${tShimmy}deg)`;
+            elves.treble.arms.left.style.transform = `rotate(${tArmL}deg)`;
+            elves.treble.arms.right.style.transform = `rotate(${tArmR}deg)`;
+            elves.treble.legs.left.style.transform = `rotate(${tShimmy * 1.5}deg)`;
+            elves.treble.legs.right.style.transform = `rotate(${tShimmy * -1.5}deg)`;
+        }
+
+        // Events
+        captureBtn.addEventListener('click', captureAudio);
+        stopBtn.addEventListener('click', stopCapture);
+    </script>
+</body>
+</html>
