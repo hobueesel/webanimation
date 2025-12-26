@@ -4,6 +4,7 @@
     
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snowy Starry Night</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
@@ -29,9 +30,78 @@
             height: 100%;
             object-fit: cover;
         }
+        
+        /* Animated Holiday Text */
+        #holiday-text {
+            position: absolute;
+            top: 5%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            font-family: 'Bangers', cursive;
+            font-size: clamp(24px, 5vw, 72px);
+            color: #ffffff;
+            text-shadow: 
+                1px 1px 0 rgba(0, 0, 0, 0.8),
+                2px 2px 0 rgba(0, 0, 0, 0.6),
+                3px 3px 4px rgba(0, 0, 0, 0.9),
+                0 0 10px rgba(100, 150, 255, 0.5),
+                0 0 20px rgba(100, 150, 255, 0.3),
+                -1px -1px 0 rgba(255, 255, 255, 0.3);
+            letter-spacing: 4px;
+            white-space: nowrap;
+            pointer-events: none;
+            animation: textGlow 3s ease-in-out infinite;
+        }
+        
+        #holiday-text span {
+            display: inline-block;
+            animation: squiggle 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes squiggle {
+            0%, 100% {
+                transform: translateY(0) rotate(0deg) scale(1);
+            }
+            25% {
+                transform: translateY(-6px) rotate(-3deg) scale(1.02);
+            }
+            50% {
+                transform: translateY(0) rotate(0deg) scale(1);
+            }
+            75% {
+                transform: translateY(6px) rotate(3deg) scale(0.98);
+            }
+        }
+        
+        @keyframes textGlow {
+            0%, 100% { 
+                opacity: 0.9;
+                text-shadow: 
+                    1px 1px 0 rgba(0, 0, 0, 0.8),
+                    2px 2px 0 rgba(0, 0, 0, 0.6),
+                    3px 3px 4px rgba(0, 0, 0, 0.9),
+                    0 0 10px rgba(100, 150, 255, 0.5),
+                    0 0 20px rgba(100, 150, 255, 0.3),
+                    -1px -1px 0 rgba(255, 255, 255, 0.3);
+            }
+            50% { 
+                opacity: 1;
+                text-shadow: 
+                    1px 1px 0 rgba(0, 0, 0, 0.8),
+                    2px 2px 0 rgba(0, 0, 0, 0.6),
+                    3px 3px 4px rgba(0, 0, 0, 0.9),
+                    0 0 15px rgba(150, 200, 255, 0.7),
+                    0 0 30px rgba(100, 150, 255, 0.5),
+                    -1px -1px 0 rgba(255, 255, 255, 0.5);
+            }
+        }
     </style>
 </head>
 <body>
+    <!-- Animated Holiday Text -->
+    <div id="holiday-text"></div>
+    
     <canvas id="glCanvas" width="1536" height="729"></canvas>
     
     <!-- Planet Core GIF -->
@@ -168,6 +238,55 @@
             vec3 glowColor = vec3(0.3, 0.6, 1.0);
             vec3 color = mix(glowColor, coreColor, vAlpha);
             gl_FragColor = vec4(color, vAlpha);
+        }
+    </script>
+
+    <!-- Vertex Shader for Sprites (firework particles) -->
+    <script id="sprite-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 aPosition;
+        attribute float aSize;
+        attribute float aAlpha;
+        attribute vec3 aColor;
+        
+        uniform vec2 uResolution;
+        
+        varying float vAlpha;
+        varying vec3 vColor;
+        
+        void main() {
+            float aspect = uResolution.x / uResolution.y;
+            gl_Position = vec4(aPosition.x / aspect, aPosition.y, 0.0, 1.0);
+            gl_PointSize = aSize * (uResolution.y / 800.0);
+            vAlpha = aAlpha;
+            vColor = aColor;
+        }
+    </script>
+
+    <!-- Fragment Shader for Sprites (firework particles) -->
+    <script id="sprite-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        varying float vAlpha;
+        varying vec3 vColor;
+        
+        void main() {
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = length(coord);
+            
+            if(dist > 0.5) {
+                discard;
+            }
+            
+            // Soft glowing particle with color
+            float softEdge = 1.0 - smoothstep(0.0, 0.5, dist);
+            float glow = exp(-dist * 4.0);
+            
+            // Bright white core fading to color
+            vec3 coreColor = vec3(1.0, 1.0, 1.0);
+            vec3 color = mix(vColor, coreColor, glow * 0.7);
+            
+            float alpha = softEdge * vAlpha * (0.6 + glow * 0.4);
+            gl_FragColor = vec4(color, alpha);
         }
     </script>
 
@@ -440,6 +559,318 @@
         const GLOBE_RADIUS = 1.5; // Outer sphere - matches snow maxRadius so lightning starts where snow appears
         let lastLightningCheck = 0;
 
+        // Create sprite program for fireworks
+        const spriteVertexShader = compileShader(gl, getShaderSource('sprite-vertex-shader'), gl.VERTEX_SHADER);
+        const spriteFragmentShader = compileShader(gl, getShaderSource('sprite-fragment-shader'), gl.FRAGMENT_SHADER);
+        const spriteProgram = createProgram(gl, spriteVertexShader, spriteFragmentShader);
+
+        const spritePositionLocation = gl.getAttribLocation(spriteProgram, 'aPosition');
+        const spriteSizeLocation = gl.getAttribLocation(spriteProgram, 'aSize');
+        const spriteAlphaLocation = gl.getAttribLocation(spriteProgram, 'aAlpha');
+        const spriteColorLocation = gl.getAttribLocation(spriteProgram, 'aColor');
+        const spriteResolutionLocation = gl.getUniformLocation(spriteProgram, 'uResolution');
+
+        // Fireworks system
+        const activeFireworks = [];
+        const FIREWORK_STAGE_1_DURATION = 0.5; // Initial projectile flight
+        const FIREWORK_STAGE_2_DURATION = 0.7; // First explosion particles
+        const FIREWORK_STAGE_3_DURATION = 1.0; // Final tiny sparkles
+        const SCREEN_EDGE_RADIUS = 2.5; // Roughly the edges of the screen
+
+        // Firework particle class
+        class FireworkParticle {
+            constructor(x, y, vx, vy, stage, color, size, lifetime) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.stage = stage; // 1 = initial projectile, 2 = first explosion, 3 = final sparkles
+                this.color = color; // {r, g, b}
+                this.size = size;
+                this.lifetime = lifetime;
+                this.age = 0;
+                this.hasExploded = false;
+                this.gravity = stage === 1 ? 0 : (stage === 2 ? 0.08 : 0.2); // Reduced gravity for more spread
+                this.drag = stage === 1 ? 0.99 : (stage === 2 ? 0.97 : 0.95); // Less drag for farther travel
+            }
+
+            update(dt) {
+                this.age += dt;
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.vy -= this.gravity * dt; // Apply gravity
+                this.vx *= this.drag;
+                this.vy *= this.drag;
+                
+                // Track if trail should be emitted (for stage 1 only)
+                this.shouldEmitTrail = this.stage === 1 && Math.random() < 0.4;
+                
+                return this.age < this.lifetime;
+            }
+
+            getAlpha() {
+                const progress = this.age / this.lifetime;
+                // Fade out in the last 30% of lifetime
+                if (progress > 0.7) {
+                    return 1.0 - (progress - 0.7) / 0.3;
+                }
+                return 1.0;
+            }
+
+            shouldExplode() {
+                // Stage 1 explodes at ~60% of lifetime, stage 2 at ~70%
+                const explodeTime = this.stage === 1 ? 0.6 : 0.7;
+                return !this.hasExploded && this.age >= this.lifetime * explodeTime;
+            }
+        }
+
+        // Create a firework from a lightning hit point
+        function createFirework(hitX, hitY, hitAngle) {
+            const firework = {
+                particles: [],
+                startTime: (Date.now() - startTime) / 1000.0
+            };
+
+            // Create 1-2 initial projectiles shooting outward
+            const numProjectiles = 1 + Math.floor(Math.random() * 2);
+            
+            for (let i = 0; i < numProjectiles; i++) {
+                // Direction perpendicular to globe (outward from center)
+                const spreadAngle = hitAngle + (Math.random() - 0.5) * 0.4;
+                const speed = 2.5 + Math.random() * 1.5; // Very fast initial velocity to reach screen edges
+                
+                const vx = Math.cos(spreadAngle) * speed;
+                const vy = Math.sin(spreadAngle) * speed;
+                
+                // Random bright color for this firework
+                const hue = Math.random() * 360;
+                const color = hslToRgb(hue, 1.0, 0.6);
+                
+                const particle = new FireworkParticle(
+                    hitX, hitY,
+                    vx, vy,
+                    1, // Stage 1
+                    color,
+                    30, // Large initial projectile
+                    FIREWORK_STAGE_1_DURATION
+                );
+                
+                firework.particles.push(particle);
+            }
+
+            activeFireworks.push(firework);
+        }
+
+        // HSL to RGB conversion for colorful fireworks
+        function hslToRgb(h, s, l) {
+            h = h / 360;
+            let r, g, b;
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            return { r, g, b };
+        }
+
+        // Create explosion from a particle
+        function explodeParticle(particle) {
+            const newParticles = [];
+            const nextStage = particle.stage + 1;
+            
+            if (nextStage > 3) return newParticles;
+
+            // Number of particles in explosion
+            const numParticles = nextStage === 2 ? (10 + Math.floor(Math.random() * 8)) : (6 + Math.floor(Math.random() * 5));
+            
+            // Lifetime for new particles
+            const lifetime = nextStage === 2 ? FIREWORK_STAGE_2_DURATION : FIREWORK_STAGE_3_DURATION;
+            
+            // Size reduction
+            const newSize = nextStage === 2 ? (12 + Math.random() * 8) : (4 + Math.random() * 4);
+            
+            // Speed of explosion - faster to spread further
+            const explosionSpeed = nextStage === 2 ? (1.5 + Math.random() * 1.0) : (0.6 + Math.random() * 0.5);
+
+            // Slight color variation
+            const baseHue = rgbToHue(particle.color);
+
+            for (let i = 0; i < numParticles; i++) {
+                // Random direction in a sphere
+                const angle = (i / numParticles) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+                const speedVariation = 0.7 + Math.random() * 0.6;
+                
+                const vx = Math.cos(angle) * explosionSpeed * speedVariation + particle.vx * 0.4;
+                const vy = Math.sin(angle) * explosionSpeed * speedVariation + particle.vy * 0.4;
+
+                // Vary the hue slightly
+                const hue = (baseHue + (Math.random() - 0.5) * 30 + 360) % 360;
+                const color = hslToRgb(hue, 0.9, 0.5 + Math.random() * 0.2);
+
+                const newParticle = new FireworkParticle(
+                    particle.x, particle.y,
+                    vx, vy,
+                    nextStage,
+                    color,
+                    newSize,
+                    lifetime
+                );
+
+                newParticles.push(newParticle);
+            }
+
+            return newParticles;
+        }
+
+        // RGB to Hue for color variation
+        function rgbToHue(color) {
+            const r = color.r, g = color.g, b = color.b;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h;
+            if (max === min) {
+                h = 0;
+            } else if (max === r) {
+                h = (60 * ((g - b) / (max - min)) + 360) % 360;
+            } else if (max === g) {
+                h = 60 * ((b - r) / (max - min)) + 120;
+            } else {
+                h = 60 * ((r - g) / (max - min)) + 240;
+            }
+            return h;
+        }
+
+        // Update fireworks system
+        function updateFireworks(currentTime, dt) {
+            for (let f = activeFireworks.length - 1; f >= 0; f--) {
+                const firework = activeFireworks[f];
+                const newParticles = [];
+
+                for (let p = firework.particles.length - 1; p >= 0; p--) {
+                    const particle = firework.particles[p];
+                    
+                    // Check if should explode before updating
+                    if (particle.shouldExplode() && particle.stage < 3) {
+                        particle.hasExploded = true;
+                        const explosionParticles = explodeParticle(particle);
+                        newParticles.push(...explosionParticles);
+                    }
+
+                    // Update particle
+                    if (!particle.update(dt)) {
+                        // Particle expired
+                        firework.particles.splice(p, 1);
+                    } else {
+                        // Create trail particles for stage 1 projectiles
+                        if (particle.shouldEmitTrail) {
+                            const trailParticle = new FireworkParticle(
+                                particle.x + (Math.random() - 0.5) * 0.02,
+                                particle.y + (Math.random() - 0.5) * 0.02,
+                                (Math.random() - 0.5) * 0.1,
+                                (Math.random() - 0.5) * 0.1 - 0.1, // Slight downward
+                                3, // Stage 3 (sparkle)
+                                { r: 1.0, g: 0.9, b: 0.6 }, // Golden trail
+                                5 + Math.random() * 4,
+                                0.3 + Math.random() * 0.2
+                            );
+                            newParticles.push(trailParticle);
+                        }
+                    }
+                }
+
+                // Add new particles from explosions and trails
+                firework.particles.push(...newParticles);
+
+                // Remove firework if no particles left
+                if (firework.particles.length === 0) {
+                    activeFireworks.splice(f, 1);
+                }
+            }
+        }
+
+        // Render fireworks
+        function renderFireworks() {
+            if (activeFireworks.length === 0) return;
+
+            gl.useProgram(spriteProgram);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending for glowing effect
+
+            gl.uniform2f(spriteResolutionLocation, canvas.width, canvas.height);
+
+            // Collect all particles
+            const positions = [];
+            const sizes = [];
+            const alphas = [];
+            const colors = [];
+
+            activeFireworks.forEach(firework => {
+                firework.particles.forEach(particle => {
+                    positions.push(particle.x, particle.y);
+                    sizes.push(particle.size);
+                    alphas.push(particle.getAlpha());
+                    colors.push(particle.color.r, particle.color.g, particle.color.b);
+                });
+            });
+
+            if (positions.length === 0) return;
+
+            // Create buffers
+            const posBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(spritePositionLocation);
+            gl.vertexAttribPointer(spritePositionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            const sizeBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sizes), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(spriteSizeLocation);
+            gl.vertexAttribPointer(spriteSizeLocation, 1, gl.FLOAT, false, 0, 0);
+
+            const alphaBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, alphaBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(alphas), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(spriteAlphaLocation);
+            gl.vertexAttribPointer(spriteAlphaLocation, 1, gl.FLOAT, false, 0, 0);
+
+            const colorBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.DYNAMIC_DRAW);
+            gl.enableVertexAttribArray(spriteColorLocation);
+            gl.vertexAttribPointer(spriteColorLocation, 3, gl.FLOAT, false, 0, 0);
+
+            gl.drawArrays(gl.POINTS, 0, positions.length / 2);
+
+            gl.disableVertexAttribArray(spritePositionLocation);
+            gl.disableVertexAttribArray(spriteSizeLocation);
+            gl.disableVertexAttribArray(spriteAlphaLocation);
+            gl.disableVertexAttribArray(spriteColorLocation);
+
+            gl.deleteBuffer(posBuffer);
+            gl.deleteBuffer(sizeBuffer);
+            gl.deleteBuffer(alphaBuffer);
+            gl.deleteBuffer(colorBuffer);
+
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        }
+
+        // Render sprites function (for backward compatibility)
+        function renderSprites(currentTime) {
+            // This is now handled by renderFireworks
+        }
+
         // Snow accumulation system - now radial around planet
         const HEIGHTMAP_RESOLUTION = 360; // Number of angle buckets (degrees)
         
@@ -550,6 +981,7 @@
         // Generate smooth curved lightning bolt path - starts from planet, spreads outward to globe
         function generateLightningBolt(startAngle, layer, currentTime) {
             const segments = [];
+            const hitPoints = []; // Track where lightning hits the outer globe
             
             // Get all accumulated snow positions for this layer to use as attraction points
             const snowParticles = [];
@@ -661,6 +1093,16 @@
                     depth: depth
                 });
                 
+                // Track hit point at the outer globe (last control point)
+                const lastPoint = controlPoints[controlPoints.length - 1];
+                if (lastPoint && lastPoint.radius >= outerRadius - 0.1) {
+                    hitPoints.push({
+                        x: lastPoint.x,
+                        y: lastPoint.y,
+                        angle: lastPoint.angle
+                    });
+                }
+                
                 // Generate sub-branches from split points - they spread outward
                 splitPoints.forEach(split => {
                     // Split off at an angle from the parent - wider angles for outer splits
@@ -760,6 +1202,7 @@
             
             return {
                 segments,
+                hitPoints, // Points where lightning hits the outer globe
                 startTime: currentTime,
                 originAngle: startAngle,
                 layer: layer,
@@ -780,6 +1223,15 @@
                             const angle = (i / HEIGHTMAP_RESOLUTION) * Math.PI * 2;
                             const bolt = generateLightningBolt(angle, layer, currentTime);
                             activeLightningBolts.push(bolt);
+                            
+                            // Create fireworks at each hit point where lightning touches the globe edge
+                            // (No secondary lightning outside the globe - it stays contained)
+                            if (bolt.hitPoints) {
+                                bolt.hitPoints.forEach(hit => {
+                                    // Create firework at this hit point!
+                                    createFirework(hit.x, hit.y, hit.angle);
+                                });
+                            }
                             
                             // Clear snow in this area (destroy accumulated snow)
                             const clearRadius = 15; // Clear this many heightmap cells
@@ -1083,8 +1535,11 @@
             });
         }
 
+        let lastFrameTime = 0;
         function render() {
             const currentTime = (Date.now() - startTime) / 1000.0;
+            const deltaTime = lastFrameTime > 0 ? currentTime - lastFrameTime : 0.016;
+            lastFrameTime = currentTime;
 
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -1187,11 +1642,32 @@
 
             // Render lightning bolts
             renderLightning(currentTime);
+            
+            // Update and render fireworks
+            updateFireworks(currentTime, deltaTime);
+            renderFireworks();
+            
+            // Render sprite hit effects (backward compatibility)
+            renderSprites(currentTime);
 
             requestAnimationFrame(render);
         }
 
         render();
+        
+        // Initialize animated holiday text
+        (function initHolidayText() {
+            const text = "Happy Holidays My Dear Tuvis!";
+            const container = document.getElementById('holiday-text');
+            
+            // Create individual spans for each character with staggered animation delay
+            text.split('').forEach((char, index) => {
+                const span = document.createElement('span');
+                span.textContent = char === ' ' ? '\u00A0' : char; // Use non-breaking space
+                span.style.animationDelay = (index * 0.08) + 's';
+                container.appendChild(span);
+            });
+        })();
     </script>
 
 </body></html>
