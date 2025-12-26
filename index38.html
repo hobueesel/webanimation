@@ -500,7 +500,7 @@
             };
         }
 
-        // Generate smooth curved lightning bolt path
+        // Generate smooth curved lightning bolt path - starts from planet, spreads outward to globe
         function generateLightningBolt(startAngle, layer, currentTime) {
             const segments = [];
             
@@ -512,28 +512,31 @@
                 snowParticles.push({ angle, radius, used: false });
             }
             
-            // Sort by radius (outer to inner) for finding jump targets
-            snowParticles.sort((a, b) => b.radius - a.radius);
+            // Sort by radius (inner to outer) for finding targets
+            snowParticles.sort((a, b) => a.radius - b.radius);
             
-            // OUTER SPHERE RADIUS - the glass ball edge where lightning starts
+            // OUTER SPHERE RADIUS - the glass ball edge where lightning ends
             const outerRadius = 1.5;
             const innerRadius = PLANET_RADIUS;
             
-            // Start with fewer main branches, but they will split
-            const numStartBranches = 3 + Math.floor(Math.random() * 4); // 3-6 main starting branches
+            // Start with very few main branches from the planet, they will split outward
+            const numStartBranches = 2 + Math.floor(Math.random() * 2); // 2-3 main starting branches
             const branchPaths = []; // Store control points for each branch
             let branchIdCounter = 0;
             
-            // Helper function to generate a branch path
-            function generateBranchPath(branchStartAngle, startRadius, parentId, depth, inheritedThickness) {
+            // Helper function to generate a branch path going OUTWARD
+            function generateBranchPath(branchStartAngle, startRadius, endRadius, parentId, depth, inheritedThickness) {
                 const controlPoints = [];
                 let currentAngle = branchStartAngle;
                 let currentRadius = startRadius;
                 const branchId = branchIdCounter++;
                 
-                // Number of control points - shorter branches for sub-branches
-                const numPoints = depth === 0 ? (15 + Math.floor(Math.random() * 10)) : (8 + Math.floor(Math.random() * 6));
-                const radiusStep = (startRadius - innerRadius) / numPoints;
+                // Number of control points - main branches are longer
+                const numPoints = depth === 0 ? (18 + Math.floor(Math.random() * 8)) : 
+                                  depth === 1 ? (12 + Math.floor(Math.random() * 6)) :
+                                  depth === 2 ? (8 + Math.floor(Math.random() * 4)) :
+                                  (5 + Math.floor(Math.random() * 3));
+                const radiusStep = (endRadius - startRadius) / numPoints;
                 
                 // Random phase offset for unique wave patterns
                 const phaseOffset = Math.random() * Math.PI * 2;
@@ -542,30 +545,31 @@
                 const splitPoints = [];
                 
                 for (let p = 0; p <= numPoints; p++) {
-                    const progressToCenter = p / numPoints;
-                    const absoluteProgress = 1.0 - (currentRadius - innerRadius) / (outerRadius - innerRadius);
+                    const progressOutward = p / numPoints;
+                    const absoluteProgress = (currentRadius - innerRadius) / (outerRadius - innerRadius);
                     
-                    // Smooth curved deviation using sine waves with varying frequencies
-                    const wave1 = Math.sin(progressToCenter * Math.PI * 2.5 + phaseOffset) * 0.18;
-                    const wave2 = Math.sin(progressToCenter * Math.PI * 5 + phaseOffset * 1.7) * 0.1;
-                    const wave3 = Math.sin(progressToCenter * Math.PI * 8 + phaseOffset * 2.3) * 0.05;
-                    const curveDeviation = (wave1 + wave2 + wave3) * (1.0 - absoluteProgress * 0.2);
+                    // Smooth curved deviation - MORE deviation as we go outward (spreading)
+                    const spreadFactor = 0.5 + absoluteProgress * 1.5; // Increases outward
+                    const wave1 = Math.sin(progressOutward * Math.PI * 2.5 + phaseOffset) * 0.12 * spreadFactor;
+                    const wave2 = Math.sin(progressOutward * Math.PI * 5 + phaseOffset * 1.7) * 0.06 * spreadFactor;
+                    const wave3 = Math.sin(progressOutward * Math.PI * 8 + phaseOffset * 2.3) * 0.03 * spreadFactor;
+                    const curveDeviation = wave1 + wave2 + wave3;
                     
-                    // Add some randomness but smoothed
-                    const randomDeviation = (Math.random() - 0.5) * 0.08 * (1.0 - absoluteProgress * 0.4);
+                    // Add randomness that increases outward
+                    const randomDeviation = (Math.random() - 0.5) * 0.1 * (0.5 + absoluteProgress);
                     
                     currentAngle = branchStartAngle + curveDeviation + randomDeviation;
-                    currentRadius = startRadius - radiusStep * p;
+                    currentRadius = startRadius + radiusStep * p;
                     
                     // Look for snow particles to attract to
                     for (const particle of snowParticles) {
                         if (particle.used) continue;
-                        if (Math.abs(particle.radius - currentRadius) < 0.15) {
+                        if (Math.abs(particle.radius - currentRadius) < 0.12) {
                             let angleDiff = Math.abs(particle.angle - currentAngle);
                             angleDiff = Math.min(angleDiff, Math.PI * 2 - angleDiff);
                             
-                            if (angleDiff < 0.25) {
-                                currentAngle = currentAngle * 0.7 + particle.angle * 0.3;
+                            if (angleDiff < 0.2) {
+                                currentAngle = currentAngle * 0.6 + particle.angle * 0.4;
                                 particle.used = true;
                                 break;
                             }
@@ -573,8 +577,8 @@
                     }
                     
                     // Convert to cartesian
-                    const x = Math.cos(currentAngle) * Math.max(innerRadius, currentRadius);
-                    const y = Math.sin(currentAngle) * Math.max(innerRadius, currentRadius);
+                    const x = Math.cos(currentAngle) * Math.min(outerRadius, currentRadius);
+                    const y = Math.sin(currentAngle) * Math.min(outerRadius, currentRadius);
                     
                     controlPoints.push({ 
                         x, y, 
@@ -583,13 +587,15 @@
                         angle: currentAngle
                     });
                     
-                    // Decide if we should split here (more splits in outer regions)
-                    // Only split if we have depth budget and we're in the outer-middle region
-                    if (depth < 3 && p > 2 && p < numPoints - 2) {
-                        const splitChance = depth === 0 ? 0.35 : (depth === 1 ? 0.25 : 0.15);
-                        const radiusZone = currentRadius > innerRadius + (outerRadius - innerRadius) * 0.3;
+                    // Decide if we should split here - MORE splits as we go OUTWARD
+                    // Higher chance of splitting in outer regions
+                    if (depth < 4 && p > 1 && p < numPoints - 1) {
+                        // Split chance increases dramatically toward outer edge
+                        const baseSplitChance = depth === 0 ? 0.25 : (depth === 1 ? 0.35 : (depth === 2 ? 0.4 : 0.3));
+                        const outerBonus = absoluteProgress * 0.3; // More splits near outer edge
+                        const splitChance = baseSplitChance + outerBonus;
                         
-                        if (radiusZone && Math.random() < splitChance) {
+                        if (Math.random() < splitChance && currentRadius < endRadius - 0.1) {
                             splitPoints.push({
                                 angle: currentAngle,
                                 radius: currentRadius,
@@ -608,13 +614,16 @@
                     depth: depth
                 });
                 
-                // Generate sub-branches from split points
+                // Generate sub-branches from split points - they spread outward
                 splitPoints.forEach(split => {
-                    // Split off at an angle from the parent
-                    const splitAngleOffset = (Math.random() - 0.5) * 0.6 + (Math.random() > 0.5 ? 0.2 : -0.2);
+                    // Split off at an angle from the parent - wider angles for outer splits
+                    const spreadAngle = 0.15 + (split.radius - innerRadius) / (outerRadius - innerRadius) * 0.35;
+                    const splitAngleOffset = (Math.random() > 0.5 ? 1 : -1) * (spreadAngle + Math.random() * 0.2);
+                    
                     generateBranchPath(
                         split.angle + splitAngleOffset, 
                         split.radius, 
+                        outerRadius,
                         branchId, 
                         split.depth,
                         1
@@ -622,40 +631,16 @@
                 });
             }
             
-            // Generate main branches that will split
+            // Generate main branches starting from the planet going outward
             for (let i = 0; i < numStartBranches; i++) {
-                const angleSpread = (Math.random() - 0.5) * 1.2;
+                const angleSpread = (Math.random() - 0.5) * 0.4; // Start close together at planet
                 const branchStartAngle = startAngle + angleSpread;
-                const startRadius = outerRadius + (Math.random() - 0.5) * 0.05;
+                const startRadius = innerRadius + 0.01;
                 
-                generateBranchPath(branchStartAngle, startRadius, -1, 0, 1);
+                generateBranchPath(branchStartAngle, startRadius, outerRadius, -1, 0, 2);
             }
             
-            // Check for branch merging and update thickness
-            for (let i = 0; i < branchPaths.length; i++) {
-                if (!branchPaths[i].active) continue;
-                
-                for (let j = i + 1; j < branchPaths.length; j++) {
-                    if (!branchPaths[j].active) continue;
-                    
-                    // Check if branches get close near the center
-                    const lastPointI = branchPaths[i].points[branchPaths[i].points.length - 1];
-                    const lastPointJ = branchPaths[j].points[branchPaths[j].points.length - 1];
-                    
-                    const dist = Math.sqrt(Math.pow(lastPointI.x - lastPointJ.x, 2) + Math.pow(lastPointI.y - lastPointJ.y, 2));
-                    
-                    if (dist < 0.12) {
-                        // Merge branches - prefer keeping the one with more depth (main branch)
-                        if (branchPaths[i].depth <= branchPaths[j].depth) {
-                            branchPaths[i].thickness += branchPaths[j].thickness;
-                            branchPaths[j].active = false;
-                        } else {
-                            branchPaths[j].thickness += branchPaths[i].thickness;
-                            branchPaths[i].active = false;
-                        }
-                    }
-                }
-            }
+            // No merging needed for outward-spreading lightning
             
             // Generate smooth curved segments using Catmull-Rom interpolation
             branchPaths.forEach(branch => {
