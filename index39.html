@@ -14,11 +14,30 @@
             display: block;
             width: 100vw;
             height: 100vh;
+            position: relative;
+            z-index: 2;
+        }
+        #planet-core {
+            position: absolute;
+            border-radius: 50%;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1;
+        }
+        #planet-core img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
     </style>
 </head>
 <body>
     <canvas id="glCanvas" width="1536" height="729"></canvas>
+    
+    <!-- Planet Core GIF -->
+    <div id="planet-core">
+        <img src="cool-tuvi.gif" alt="Planet Core">
+    </div>
 
     <!-- Vertex Shader for Snow -->
     <script id="snow-vertex-shader" type="x-shader/x-vertex">
@@ -217,12 +236,16 @@
             color = mix(color, globeColor, globeGlow * 0.3);
             color = mix(color, vec3(0.3, 0.5, 0.8), globeRing * 0.4);
             
-            // Planet itself (dark core)
+            // Planet itself (transparent to show GIF underneath)
             if(dist < uPlanetRadius) {
-                vec3 planetColor = vec3(0.02, 0.03, 0.08);
-                vec3 planetHighlight = vec3(0.05, 0.1, 0.2);
+                // Just show a subtle edge glow, keep center transparent
                 float edgeGlow = smoothstep(uPlanetRadius - 0.02, uPlanetRadius, dist);
-                color = mix(planetColor, planetHighlight, edgeGlow);
+                vec3 edgeColor = vec3(0.1, 0.2, 0.4);
+                color = mix(vec3(0.0), edgeColor, edgeGlow);
+                // Make the center more transparent
+                float alpha = smoothstep(uPlanetRadius - 0.03, uPlanetRadius, dist);
+                gl_FragColor = vec4(color, alpha);
+                return;
             }
             
             gl_FragColor = vec4(color, 1.0);
@@ -231,7 +254,7 @@
 
     <script>
         const canvas = document.getElementById('glCanvas');
-        const gl = canvas.getContext('webgl');
+        const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
 
         if (!gl) {
             alert('WebGL not supported');
@@ -243,7 +266,31 @@
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             gl.viewport(0, 0, canvas.width, canvas.height);
+            updatePlanetCorePosition();
         }
+        
+        // Position the planet core GIF to match the WebGL planet
+        const planetCoreElement = document.getElementById('planet-core');
+        function updatePlanetCorePosition() {
+            const PLANET_RADIUS = 0.15; // Same as in the shader
+            const aspect = canvas.width / canvas.height;
+            
+            // Convert normalized coordinates to pixels
+            // The planet is at center (0,0) in normalized coords
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            
+            // Planet radius in pixels (account for aspect ratio) - make it smaller
+            const radiusPixels = PLANET_RADIUS * canvas.height * 0.4;
+            
+            // Size and position the element
+            const size = radiusPixels * 2;
+            planetCoreElement.style.width = size + 'px';
+            planetCoreElement.style.height = size + 'px';
+            planetCoreElement.style.left = (centerX - radiusPixels) + 'px';
+            planetCoreElement.style.top = (centerY - radiusPixels) + 'px';
+        }
+        
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
