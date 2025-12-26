@@ -121,6 +121,37 @@
         }
     </script>
 
+    <!-- Vertex Shader for Lightning -->
+    <script id="lightning-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 aPosition;
+        attribute float aAlpha;
+        
+        uniform vec2 uResolution;
+        
+        varying float vAlpha;
+        
+        void main() {
+            float aspect = uResolution.x / uResolution.y;
+            gl_Position = vec4(aPosition.x / aspect, aPosition.y, 0.0, 1.0);
+            vAlpha = aAlpha;
+        }
+    </script>
+
+    <!-- Fragment Shader for Lightning -->
+    <script id="lightning-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        varying float vAlpha;
+        
+        void main() {
+            // Electric blue-white color
+            vec3 coreColor = vec3(1.0, 1.0, 1.0);
+            vec3 glowColor = vec3(0.3, 0.6, 1.0);
+            vec3 color = mix(glowColor, coreColor, vAlpha);
+            gl_FragColor = vec4(color, vAlpha);
+        }
+    </script>
+
     <!-- Vertex Shader for Background -->
     <script id="bg-vertex-shader" type="x-shader/x-vertex">
         attribute vec2 aPosition;
@@ -139,6 +170,7 @@
         uniform float uTime;
         uniform vec2 uResolution;
         uniform float uPlanetRadius;
+        uniform float uGlobeRadius;
         
         varying vec2 vUv;
         
@@ -176,6 +208,14 @@
             vec3 color = spaceColor;
             color = mix(color, midGlow, outerGlow * 0.5);
             color = mix(color, glowColor, innerGlow * 0.7);
+            
+            // Outer globe sphere (plasma ball glass)
+            float globeEdge = abs(dist - uGlobeRadius);
+            float globeRing = smoothstep(0.02, 0.0, globeEdge);
+            float globeGlow = smoothstep(0.08, 0.0, globeEdge);
+            vec3 globeColor = vec3(0.15, 0.3, 0.5);
+            color = mix(color, globeColor, globeGlow * 0.3);
+            color = mix(color, vec3(0.3, 0.5, 0.8), globeRing * 0.4);
             
             // Planet itself (dark core)
             if(dist < uPlanetRadius) {
@@ -261,6 +301,7 @@
         const bgTimeLocation = gl.getUniformLocation(bgProgram, 'uTime');
         const bgResolutionLocation = gl.getUniformLocation(bgProgram, 'uResolution');
         const bgPlanetRadiusLocation = gl.getUniformLocation(bgProgram, 'uPlanetRadius');
+        const bgGlobeRadiusLocation = gl.getUniformLocation(bgProgram, 'uGlobeRadius');
 
         // Create snow program
         const snowVertexShader = compileShader(gl, getShaderSource('snow-vertex-shader'), gl.VERTEX_SHADER);
@@ -336,6 +377,22 @@
         const accResolutionLocation = gl.getUniformLocation(accProgram, 'uResolution');
         const accScaleLocation = gl.getUniformLocation(accProgram, 'uScale');
 
+        // Create lightning program
+        const lightningVertexShader = compileShader(gl, getShaderSource('lightning-vertex-shader'), gl.VERTEX_SHADER);
+        const lightningFragmentShader = compileShader(gl, getShaderSource('lightning-fragment-shader'), gl.FRAGMENT_SHADER);
+        const lightningProgram = createProgram(gl, lightningVertexShader, lightningFragmentShader);
+
+        const lightningPositionLocation = gl.getAttribLocation(lightningProgram, 'aPosition');
+        const lightningAlphaLocation = gl.getAttribLocation(lightningProgram, 'aAlpha');
+        const lightningResolutionLocation = gl.getUniformLocation(lightningProgram, 'uResolution');
+
+        // Lightning system
+        const activeLightningBolts = [];
+        const LIGHTNING_THRESHOLD = 0.005; // Height threshold to trigger lightning
+        const LIGHTNING_DURATION = 0.6; // How long lightning lasts in seconds (increased for visibility)
+        const GLOBE_RADIUS = 1.5; // Outer sphere - matches snow maxRadius so lightning starts where snow appears
+        let lastLightningCheck = 0;
+
         // Snow accumulation system - now radial around planet
         const HEIGHTMAP_RESOLUTION = 360; // Number of angle buckets (degrees)
         
@@ -397,8 +454,8 @@
 
         // Redistribute snow around the planet when too much accumulates
         function redistributeSnow(layer) {
-            const MAX_HEIGHT_DIFFERENCE = 0.008; // Maximum allowed height difference between adjacent cells
-            const SPREAD_RATE = 0.3; // How much snow spreads to neighbors
+            const MAX_HEIGHT_DIFFERENCE = 0.003; // Maximum allowed height difference between adjacent cells
+            const SPREAD_RATE = 0.15; // How much snow spreads to neighbors
             
             const newHeightmap = new Float32Array(layer.heightmap);
             
@@ -430,6 +487,425 @@
             }
             
             layer.heightmap.set(newHeightmap);
+        }
+
+        // Catmull-Rom spline interpolation for smooth curves
+        function catmullRomPoint(p0, p1, p2, p3, t) {
+            const t2 = t * t;
+            const t3 = t2 * t;
+            
+            return {
+                x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+                y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+            };
+        }
+
+        // Generate smooth curved lightning bolt path
+        function generateLightningBolt(startAngle, layer, currentTime) {
+            const segments = [];
+            
+            // Get all accumulated snow positions for this layer to use as attraction points
+            const snowParticles = [];
+            for (let i = 0; i < layer.accumulated.positions.length; i += 2) {
+                const angle = layer.accumulated.positions[i];
+                const radius = layer.accumulated.positions[i + 1];
+                snowParticles.push({ angle, radius, used: false });
+            }
+            
+            // Sort by radius (outer to inner) for finding jump targets
+            snowParticles.sort((a, b) => b.radius - a.radius);
+            
+            // OUTER SPHERE RADIUS - the glass ball edge where lightning starts
+            const outerRadius = 1.5;
+            const innerRadius = PLANET_RADIUS;
+            
+            // Start multiple branches from the outer sphere
+            const numStartBranches = 8 + Math.floor(Math.random() * 8); // 8-16 starting branches
+            const branchPaths = []; // Store control points for each branch
+            
+            // Generate control points for each branch
+            for (let i = 0; i < numStartBranches; i++) {
+                const angleSpread = (Math.random() - 0.5) * 1.5;
+                const branchStartAngle = startAngle + angleSpread;
+                
+                // Generate control points along the path from outer to inner
+                const controlPoints = [];
+                let currentAngle = branchStartAngle;
+                let currentRadius = outerRadius + (Math.random() - 0.5) * 0.05;
+                let thickness = 1;
+                
+                // Number of control points determines smoothness
+                const numPoints = 15 + Math.floor(Math.random() * 10);
+                const radiusStep = (outerRadius - innerRadius) / numPoints;
+                
+                for (let p = 0; p <= numPoints; p++) {
+                    const progressToCenter = p / numPoints;
+                    
+                    // Smooth curved deviation using sine waves with varying frequencies
+                    const wave1 = Math.sin(progressToCenter * Math.PI * 2 + i * 0.7) * 0.15;
+                    const wave2 = Math.sin(progressToCenter * Math.PI * 4 + i * 1.3) * 0.08;
+                    const wave3 = Math.sin(progressToCenter * Math.PI * 6 + i * 2.1) * 0.04;
+                    const curveDeviation = (wave1 + wave2 + wave3) * (1.0 - progressToCenter * 0.3);
+                    
+                    // Add some randomness but smoothed
+                    const randomDeviation = (Math.random() - 0.5) * 0.1 * (1.0 - progressToCenter * 0.5);
+                    
+                    currentAngle = branchStartAngle + curveDeviation + randomDeviation;
+                    currentRadius = outerRadius - radiusStep * p;
+                    
+                    // Look for snow particles to attract to
+                    for (const particle of snowParticles) {
+                        if (particle.used) continue;
+                        if (Math.abs(particle.radius - currentRadius) < 0.15) {
+                            let angleDiff = Math.abs(particle.angle - currentAngle);
+                            angleDiff = Math.min(angleDiff, Math.PI * 2 - angleDiff);
+                            
+                            if (angleDiff < 0.25) {
+                                // Smoothly blend toward the particle
+                                currentAngle = currentAngle * 0.7 + particle.angle * 0.3;
+                                particle.used = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Convert to cartesian
+                    const x = Math.cos(currentAngle) * Math.max(innerRadius, currentRadius);
+                    const y = Math.sin(currentAngle) * Math.max(innerRadius, currentRadius);
+                    
+                    controlPoints.push({ 
+                        x, y, 
+                        radius: currentRadius,
+                        thickness: thickness,
+                        angle: currentAngle
+                    });
+                }
+                
+                branchPaths.push({
+                    points: controlPoints,
+                    id: i,
+                    active: true,
+                    thickness: 1
+                });
+            }
+            
+            // Check for branch merging and update thickness
+            for (let i = 0; i < branchPaths.length; i++) {
+                if (!branchPaths[i].active) continue;
+                
+                for (let j = i + 1; j < branchPaths.length; j++) {
+                    if (!branchPaths[j].active) continue;
+                    
+                    // Check if branches get close near the center
+                    const lastPointI = branchPaths[i].points[branchPaths[i].points.length - 1];
+                    const lastPointJ = branchPaths[j].points[branchPaths[j].points.length - 1];
+                    
+                    const dist = Math.sqrt(Math.pow(lastPointI.x - lastPointJ.x, 2) + Math.pow(lastPointI.y - lastPointJ.y, 2));
+                    
+                    if (dist < 0.15) {
+                        // Merge branches
+                        branchPaths[i].thickness += branchPaths[j].thickness;
+                        branchPaths[j].active = false;
+                    }
+                }
+            }
+            
+            // Generate smooth curved segments using Catmull-Rom interpolation
+            branchPaths.forEach(branch => {
+                if (!branch.active) return;
+                
+                const points = branch.points;
+                if (points.length < 4) return;
+                
+                // Interpolate between control points for smooth curves
+                const segmentsPerSpan = 5; // More segments = smoother curves
+                
+                for (let i = 0; i < points.length - 1; i++) {
+                    // Get 4 control points for Catmull-Rom (with clamping at edges)
+                    const p0 = points[Math.max(0, i - 1)];
+                    const p1 = points[i];
+                    const p2 = points[Math.min(points.length - 1, i + 1)];
+                    const p3 = points[Math.min(points.length - 1, i + 2)];
+                    
+                    // Interpolate thickness based on radius (thicker near center)
+                    const progressToCenter = 1.0 - (p1.radius - innerRadius) / (outerRadius - innerRadius);
+                    const segThickness = branch.thickness;
+                    
+                    // Generate smooth curve segments
+                    for (let s = 0; s < segmentsPerSpan; s++) {
+                        const t1 = s / segmentsPerSpan;
+                        const t2 = (s + 1) / segmentsPerSpan;
+                        
+                        const point1 = catmullRomPoint(p0, p1, p2, p3, t1);
+                        const point2 = catmullRomPoint(p0, p1, p2, p3, t2);
+                        
+                        // Interpolate radius for this segment
+                        const segRadius = p1.radius * (1 - t1) + p2.radius * t1;
+                        
+                        segments.push({
+                            x1: point1.x,
+                            y1: point1.y,
+                            x2: point2.x,
+                            y2: point2.y,
+                            thickness: segThickness,
+                            radius: segRadius
+                        });
+                    }
+                }
+            });
+            
+            return {
+                segments,
+                startTime: currentTime,
+                originAngle: startAngle,
+                layer: layer,
+                outerRadius: outerRadius
+            };
+        }
+
+        // Check for lightning triggers and update active bolts
+        function updateLightning(currentTime) {
+            // Check for new lightning triggers (not every frame for performance)
+            if (currentTime - lastLightningCheck > 0.1) {
+                lastLightningCheck = currentTime;
+                
+                layers.forEach(layer => {
+                    for (let i = 0; i < HEIGHTMAP_RESOLUTION; i++) {
+                        if (layer.heightmap[i] > LIGHTNING_THRESHOLD) {
+                            // Trigger lightning!
+                            const angle = (i / HEIGHTMAP_RESOLUTION) * Math.PI * 2;
+                            const bolt = generateLightningBolt(angle, layer, currentTime);
+                            activeLightningBolts.push(bolt);
+                            
+                            // Clear snow in this area (destroy accumulated snow)
+                            const clearRadius = 15; // Clear this many heightmap cells
+                            for (let j = -clearRadius; j <= clearRadius; j++) {
+                                const clearIdx = (i + j + HEIGHTMAP_RESOLUTION) % HEIGHTMAP_RESOLUTION;
+                                const falloff = 1.0 - Math.abs(j) / clearRadius;
+                                layer.heightmap[clearIdx] *= (1.0 - falloff * 0.9);
+                            }
+                            
+                            // Remove accumulated snow particles in this area
+                            const newPositions = [];
+                            const newSizes = [];
+                            let newCount = 0;
+                            
+                            for (let p = 0; p < layer.accumulated.positions.length; p += 2) {
+                                const pAngle = layer.accumulated.positions[p];
+                                const pRadius = layer.accumulated.positions[p + 1];
+                                
+                                // Check if particle is in the blast zone
+                                let angleDiff = Math.abs(pAngle - angle);
+                                angleDiff = Math.min(angleDiff, Math.PI * 2 - angleDiff);
+                                
+                                const inBlastZone = angleDiff < 0.15 && pRadius < PLANET_RADIUS + 0.1;
+                                
+                                if (!inBlastZone) {
+                                    newPositions.push(pAngle, pRadius);
+                                    newSizes.push(layer.accumulated.sizes[p / 2]);
+                                    newCount++;
+                                }
+                            }
+                            
+                            layer.accumulated.positions = newPositions;
+                            layer.accumulated.sizes = newSizes;
+                            layer.accumulated.count = newCount;
+                            
+                            // Update buffers
+                            if (layer.accumulated.buffer && newCount > 0) {
+                                gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.buffer);
+                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(newPositions), gl.STATIC_DRAW);
+                                
+                                gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.sizeBuffer);
+                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(newSizes), gl.STATIC_DRAW);
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Remove expired lightning bolts
+            for (let i = activeLightningBolts.length - 1; i >= 0; i--) {
+                if (currentTime - activeLightningBolts[i].startTime > LIGHTNING_DURATION) {
+                    activeLightningBolts.splice(i, 1);
+                }
+            }
+        }
+
+        // Render lightning bolts - plasma ball style with thickness variation
+        function renderLightning(currentTime) {
+            if (activeLightningBolts.length === 0) return;
+            
+            gl.useProgram(lightningProgram);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive blending for glow effect
+            
+            gl.uniform2f(lightningResolutionLocation, canvas.width, canvas.height);
+            
+            activeLightningBolts.forEach(bolt => {
+                if (!bolt.segments || bolt.segments.length === 0) return;
+                
+                const age = currentTime - bolt.startTime;
+                const fadeOut = 1.0 - (age / LIGHTNING_DURATION);
+                const flicker = 0.7 + Math.random() * 0.3; // Random flicker
+                
+                // Group segments by thickness for batch rendering
+                const thicknessGroups = {};
+                
+                bolt.segments.forEach(seg => {
+                    const baseThickness = seg.thickness || 1;
+                    const segRadius = seg.radius || 1.0;
+                    
+                    // Calculate progress toward center (0 at outer edge, 1 at planet)
+                    const outerR = 1.5;
+                    const innerR = PLANET_RADIUS;
+                    const progressToCenter = Math.max(0, Math.min(1, 1.0 - (segRadius - innerR) / (outerR - innerR)));
+                    
+                    // Scale thickness based on distance from center
+                    // Outer branches are hair-thin, inner branches are slightly thicker
+                    const radiusMultiplier = 0.1 + progressToCenter * 0.9;
+                    const thickness = Math.max(1, Math.round(baseThickness * radiusMultiplier));
+                    
+                    if (!thicknessGroups[thickness]) {
+                        thicknessGroups[thickness] = { positions: [], alphas: [], radii: [] };
+                    }
+                    
+                    // Add slight jitter for electric effect - more jitter at outer edges
+                    const jitter = 0.003 * (1.5 - progressToCenter);
+                    const jx1 = seg.x1 + (Math.random() - 0.5) * jitter;
+                    const jy1 = seg.y1 + (Math.random() - 0.5) * jitter;
+                    const jx2 = seg.x2 + (Math.random() - 0.5) * jitter;
+                    const jy2 = seg.y2 + (Math.random() - 0.5) * jitter;
+                    
+                    thicknessGroups[thickness].positions.push(jx1, jy1, jx2, jy2);
+                    thicknessGroups[thickness].radii.push(progressToCenter);
+                    
+                    // Alpha based on thickness - thicker = brighter core
+                    const baseAlpha = Math.min(1.0, 0.4 + thickness * 0.08);
+                    const alpha = baseAlpha * fadeOut * flicker;
+                    thicknessGroups[thickness].alphas.push(alpha, alpha);
+                });
+                
+                // Render each thickness group - more passes for thicker lines
+                for (const [thicknessStr, group] of Object.entries(thicknessGroups)) {
+                    const thickness = parseInt(thicknessStr);
+                    if (group.positions.length === 0) continue;
+                    
+                    // Average progress to center for this group (for glow calculation)
+                    const avgProgress = group.radii.reduce((a, b) => a + b, 0) / group.radii.length;
+                    
+                    // Calculate number of passes based on thickness
+                    // Keep passes minimal for thin crisp lines
+                    const basePasses = Math.min(Math.ceil(thickness), 6);
+                    
+                    // Glow passes - minimal
+                    const glowPassCount = Math.ceil(1 + avgProgress * 1.5); // 1-3 glow layers
+                    
+                    // Draw the glow layer first (very narrow)
+                    for (let glowPass = 0; glowPass < glowPassCount; glowPass++) {
+                        // Very subtle glow
+                        const glowWidth = (thickness + glowPass + avgProgress * 1) * 0.002;
+                        const passesForGlow = basePasses + glowPass + Math.floor(avgProgress);
+                        
+                        for (let pass = 0; pass < passesForGlow; pass++) {
+                            const offsetPositions = [];
+                            const offsetAmount = (pass - (passesForGlow - 1) / 2) * glowWidth / passesForGlow;
+                            
+                            for (let i = 0; i < group.positions.length; i += 4) {
+                                const x1 = group.positions[i];
+                                const y1 = group.positions[i + 1];
+                                const x2 = group.positions[i + 2];
+                                const y2 = group.positions[i + 3];
+                                
+                                // Calculate perpendicular offset for line thickness
+                                const dx = x2 - x1;
+                                const dy = y2 - y1;
+                                const len = Math.sqrt(dx * dx + dy * dy);
+                                if (len > 0) {
+                                    const px = -dy / len * offsetAmount;
+                                    const py = dx / len * offsetAmount;
+                                    offsetPositions.push(x1 + px, y1 + py, x2 + px, y2 + py);
+                                } else {
+                                    offsetPositions.push(x1, y1, x2, y2);
+                                }
+                            }
+                            
+                            // Glow alpha is lower - but stronger for inner bolts
+                            const glowAlphas = group.alphas.map(a => a * (0.35 + avgProgress * 0.15 - glowPass * 0.06));
+                            
+                            // Create and bind buffers
+                            const posBuffer = gl.createBuffer();
+                            gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+                            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(offsetPositions), gl.DYNAMIC_DRAW);
+                            gl.enableVertexAttribArray(lightningPositionLocation);
+                            gl.vertexAttribPointer(lightningPositionLocation, 2, gl.FLOAT, false, 0, 0);
+                            
+                            const alphaBuffer = gl.createBuffer();
+                            gl.bindBuffer(gl.ARRAY_BUFFER, alphaBuffer);
+                            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(glowAlphas), gl.DYNAMIC_DRAW);
+                            gl.enableVertexAttribArray(lightningAlphaLocation);
+                            gl.vertexAttribPointer(lightningAlphaLocation, 1, gl.FLOAT, false, 0, 0);
+                            
+                            gl.drawArrays(gl.LINES, 0, offsetPositions.length / 2);
+                            
+                            gl.disableVertexAttribArray(lightningPositionLocation);
+                            gl.disableVertexAttribArray(lightningAlphaLocation);
+                            
+                            gl.deleteBuffer(posBuffer);
+                            gl.deleteBuffer(alphaBuffer);
+                        }
+                    }
+                    
+                    // Draw the core (bright center) - thin crisp lines
+                    const coreWidth = thickness * 0.0015 * (1 + avgProgress * 0.2);
+                    const corePasses = Math.max(1, Math.ceil(thickness * 0.5));
+                    
+                    for (let pass = 0; pass < corePasses; pass++) {
+                        const offsetPositions = [];
+                        const offsetAmount = (pass - (corePasses - 1) / 2) * coreWidth / Math.max(1, corePasses - 1);
+                        
+                        for (let i = 0; i < group.positions.length; i += 4) {
+                            const x1 = group.positions[i];
+                            const y1 = group.positions[i + 1];
+                            const x2 = group.positions[i + 2];
+                            const y2 = group.positions[i + 3];
+                            
+                            const dx = x2 - x1;
+                            const dy = y2 - y1;
+                            const len = Math.sqrt(dx * dx + dy * dy);
+                            if (len > 0 && corePasses > 1) {
+                                const px = -dy / len * offsetAmount;
+                                const py = dx / len * offsetAmount;
+                                offsetPositions.push(x1 + px, y1 + py, x2 + px, y2 + py);
+                            } else {
+                                offsetPositions.push(x1, y1, x2, y2);
+                            }
+                        }
+                        
+                        const posBuffer = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(offsetPositions), gl.DYNAMIC_DRAW);
+                        gl.enableVertexAttribArray(lightningPositionLocation);
+                        gl.vertexAttribPointer(lightningPositionLocation, 2, gl.FLOAT, false, 0, 0);
+                        
+                        const alphaBuffer = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, alphaBuffer);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(group.alphas), gl.DYNAMIC_DRAW);
+                        gl.enableVertexAttribArray(lightningAlphaLocation);
+                        gl.vertexAttribPointer(lightningAlphaLocation, 1, gl.FLOAT, false, 0, 0);
+                        
+                        gl.drawArrays(gl.LINES, 0, offsetPositions.length / 2);
+                        
+                        gl.disableVertexAttribArray(lightningPositionLocation);
+                        gl.disableVertexAttribArray(lightningAlphaLocation);
+                        
+                        gl.deleteBuffer(posBuffer);
+                        gl.deleteBuffer(alphaBuffer);
+                    }
+                }
+            });
+            
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         }
 
         function checkAndAccumulateSnow(currentTime) {
@@ -478,7 +954,7 @@
                         }
                         
                         // Update heightmap
-                        const particleHeightContribution = size * 0.00008;
+                        const particleHeightContribution = size * 0.0002;
                         addSnowToHeightmap(layer, angle, particleHeightContribution);
                         
                         // Mark as accumulated
@@ -517,6 +993,7 @@
             gl.uniform1f(bgTimeLocation, currentTime);
             gl.uniform2f(bgResolutionLocation, canvas.width, canvas.height);
             gl.uniform1f(bgPlanetRadiusLocation, PLANET_RADIUS);
+            gl.uniform1f(bgGlobeRadiusLocation, GLOBE_RADIUS);
             
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -574,6 +1051,9 @@
             // Redistribute snow every frame to create natural spreading
             layers.forEach(layer => redistributeSnow(layer));
 
+            // Update and check for lightning triggers
+            updateLightning(currentTime);
+
             // Render accumulated snow
             gl.useProgram(accProgram);
             gl.enable(gl.BLEND);
@@ -599,6 +1079,9 @@
             });
             
             gl.disable(gl.BLEND);
+
+            // Render lightning bolts
+            renderLightning(currentTime);
 
             requestAnimationFrame(render);
         }
