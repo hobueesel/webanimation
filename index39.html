@@ -402,12 +402,13 @@
             // Planet radius in pixels (account for aspect ratio) - make it smaller
             const radiusPixels = PLANET_RADIUS * canvas.height * 0.4;
             
-            // Size and position the element
+            // Size and position the element - use transform to center from the element's center point
             const size = radiusPixels * 2;
             planetCoreElement.style.width = size + 'px';
             planetCoreElement.style.height = size + 'px';
-            planetCoreElement.style.left = (centerX - radiusPixels) + 'px';
-            planetCoreElement.style.top = (centerY - radiusPixels) + 'px';
+            planetCoreElement.style.left = centerX + 'px';
+            planetCoreElement.style.top = centerY + 'px';
+            planetCoreElement.style.transform = 'translate(-50%, -50%)';
         }
         
         resizeCanvas();
