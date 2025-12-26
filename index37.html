@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<!-- saved from url=(0063)file:///C:/Users/krist/Documents/Code/webanimation/index36.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snowy Starry Night</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas" width="1536" height="729"></canvas>
+
+    <!-- Vertex Shader for Snow -->
+    <script id="snow-vertex-shader" type="x-shader/x-vertex">
+        attribute vec3 aPosition;
+        attribute float aSize;
+        attribute float aSpeed;
+        attribute float aOffset;
+        
+        uniform float uTime;
+        uniform vec2 uResolution;
+        uniform float uScale;
+        uniform float uDepth;
+        uniform float uSpeedMultiplier;
+        uniform float uPlanetRadius;
+        
+        varying float vAlpha;
+        
+        void main() {
+            // aPosition.x is the angle (0-1 maps to 0-2PI)
+            // aPosition.y is used for radial distance variation
+            float angle = aPosition.x * 6.28318530718; // 2*PI
+            
+            // Animate snow falling radially inward
+            float maxRadius = 1.5; // Start from beyond screen edge
+            float fallProgress = mod(uTime * aSpeed * uSpeedMultiplier * 0.3 + aOffset, 1.0);
+            float radius = maxRadius * (1.0 - fallProgress) + uPlanetRadius * fallProgress;
+            
+            // Add some angular drift
+            float drift = sin(uTime * 0.3 + aOffset * 10.0) * 0.1;
+            float finalAngle = angle + drift;
+            
+            // Convert polar to cartesian (centered at 0,0)
+            float x = cos(finalAngle) * radius;
+            float y = sin(finalAngle) * radius;
+            
+            // Fade in at edge, fade out near planet
+            float fadeIn = smoothstep(0.0, 0.1, fallProgress);
+            float fadeOut = smoothstep(1.0, 0.85, fallProgress);
+            vAlpha = fadeIn * fadeOut * uDepth;
+            
+            // Adjust for aspect ratio
+            float aspect = uResolution.x / uResolution.y;
+            gl_Position = vec4(x / aspect, y, aPosition.z, 1.0);
+            gl_PointSize = aSize * (uResolution.y / 800.0) * uScale;
+        }
+    </script>
+
+    <!-- Fragment Shader for Snow -->
+    <script id="snow-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        varying float vAlpha;
+        
+        void main() {
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = length(coord);
+            
+            if(dist > 0.5) {
+                discard;
+            }
+            
+            float alpha = (1.0 - dist * 2.0) * vAlpha;
+            gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+        }
+    </script>
+
+    <!-- Vertex Shader for Accumulated Snow -->
+    <script id="accumulated-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 aPosition; // x = angle, y = radius
+        attribute float aSize;
+        
+        uniform vec2 uResolution;
+        uniform float uScale;
+        
+        void main() {
+            // aPosition.x is angle in radians, aPosition.y is radius
+            float x = cos(aPosition.x) * aPosition.y;
+            float y = sin(aPosition.x) * aPosition.y;
+            
+            float aspect = uResolution.x / uResolution.y;
+            gl_Position = vec4(x / aspect, y, 0.0, 1.0);
+            gl_PointSize = aSize * (uResolution.y / 800.0) * uScale;
+        }
+    </script>
+
+    <!-- Fragment Shader for Accumulated Snow -->
+    <script id="accumulated-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        void main() {
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = length(coord);
+            
+            if(dist > 0.5) {
+                discard;
+            }
+            
+            float alpha = 1.0 - dist * 2.0;
+            gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+        }
+    </script>
+
+    <!-- Vertex Shader for Background -->
+    <script id="bg-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 aPosition;
+        varying vec2 vUv;
+        
+        void main() {
+            vUv = aPosition * 0.5 + 0.5;
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+        }
+    </script>
+
+    <!-- Fragment Shader for Background -->
+    <script id="bg-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        uniform float uTime;
+        uniform vec2 uResolution;
+        uniform float uPlanetRadius;
+        
+        varying vec2 vUv;
+        
+        // Simple noise function
+        float random(vec2 st) {
+            return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+        }
+        
+        void main() {
+            vec2 uv = vUv;
+            
+            // Convert to centered coordinates with aspect ratio correction
+            vec2 centered = (uv - 0.5) * 2.0;
+            centered.x *= uResolution.x / uResolution.y;
+            
+            // Distance from center
+            float dist = length(centered);
+            
+            // Deep space background
+            vec3 spaceColor = vec3(0.0, 0.0, 0.05);
+            
+            // Radial glow around planet
+            vec3 glowColor = vec3(1.0, 0.4, 0.2); // Sunset orange glow
+            vec3 midGlow = vec3(0.1, 0.05, 0.2); // Deep purple
+            
+            // Create radial gradient from planet outward
+            float glowStart = uPlanetRadius;
+            float glowEnd = uPlanetRadius + 0.4;
+            float glowFactor = 1.0 - smoothstep(glowStart, glowEnd, dist);
+            
+            // Atmosphere layers
+            float innerGlow = 1.0 - smoothstep(glowStart, glowStart + 0.15, dist);
+            float outerGlow = 1.0 - smoothstep(glowStart + 0.1, glowEnd, dist);
+            
+            vec3 color = spaceColor;
+            color = mix(color, midGlow, outerGlow * 0.5);
+            color = mix(color, glowColor, innerGlow * 0.7);
+            
+            // Planet itself (dark core)
+            if(dist < uPlanetRadius) {
+                vec3 planetColor = vec3(0.05, 0.03, 0.08);
+                vec3 planetHighlight = vec3(0.15, 0.08, 0.05);
+                float edgeGlow = smoothstep(uPlanetRadius - 0.02, uPlanetRadius, dist);
+                color = mix(planetColor, planetHighlight, edgeGlow);
+            }
+            
+            gl_FragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <script>
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('WebGL not supported');
+            throw new Error('WebGL not supported');
+        }
+
+        // Resize canvas to full screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Compile shader
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Create program
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program link error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            return program;
+        }
+
+        // Get shader source from script tag
+        function getShaderSource(id) {
+            return document.getElementById(id).textContent;
+        }
+
+        // Create background program
+        const bgVertexShader = compileShader(gl, getShaderSource('bg-vertex-shader'), gl.VERTEX_SHADER);
+        const bgFragmentShader = compileShader(gl, getShaderSource('bg-fragment-shader'), gl.FRAGMENT_SHADER);
+        const bgProgram = createProgram(gl, bgVertexShader, bgFragmentShader);
+
+        // Background quad
+        const bgVertices = new Float32Array([
+            -1, -1,
+             1, -1,
+            -1,  1,
+             1,  1
+        ]);
+
+        const bgBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, bgBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, bgVertices, gl.STATIC_DRAW);
+
+        const bgPositionLocation = gl.getAttribLocation(bgProgram, 'aPosition');
+        const bgTimeLocation = gl.getUniformLocation(bgProgram, 'uTime');
+        const bgResolutionLocation = gl.getUniformLocation(bgProgram, 'uResolution');
+        const bgPlanetRadiusLocation = gl.getUniformLocation(bgProgram, 'uPlanetRadius');
+
+        // Create snow program
+        const snowVertexShader = compileShader(gl, getShaderSource('snow-vertex-shader'), gl.VERTEX_SHADER);
+        const snowFragmentShader = compileShader(gl, getShaderSource('snow-fragment-shader'), gl.FRAGMENT_SHADER);
+        const snowProgram = createProgram(gl, snowVertexShader, snowFragmentShader);
+
+        // Snow particles - different amounts per layer
+        const layer1Count = 1000;
+        const layer2Count = 10000;
+        const layer3Count = 30000;
+        const numSnowflakes = layer1Count + layer2Count + layer3Count;
+        const snowPositions = [];
+        const snowSizes = [];
+        const snowSpeeds = [];
+        const snowOffsets = [];
+
+        for (let i = 0; i < numSnowflakes; i++) {
+            // Position - now angle-based for radial distribution
+            snowPositions.push(Math.random()); // angle (0-1 maps to 0-2PI)
+            snowPositions.push(Math.random()); // radial variation
+            snowPositions.push(Math.random() * 0.5); // z (for depth)
+            
+            // Size (larger in front)
+            const depth = snowPositions[i * 3 + 2];
+            snowSizes.push(2.0 + (1.0 - depth) * 4.0);
+            
+            // Speed (faster in front)
+            snowSpeeds.push(0.1 + (1.0 - depth) * 0.3);
+            
+            // Random offset for staggered animation
+            snowOffsets.push(Math.random());
+        }
+
+        // Create buffers for snow
+        const snowPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(snowPositions), gl.STATIC_DRAW);
+
+        const snowSizeBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowSizeBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(snowSizes), gl.STATIC_DRAW);
+
+        const snowSpeedBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowSpeedBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(snowSpeeds), gl.STATIC_DRAW);
+
+        const snowOffsetBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, snowOffsetBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(snowOffsets), gl.STATIC_DRAW);
+
+        // Get attribute locations for snow
+        const snowPositionLocation = gl.getAttribLocation(snowProgram, 'aPosition');
+        const snowSizeLocation = gl.getAttribLocation(snowProgram, 'aSize');
+        const snowSpeedLocation = gl.getAttribLocation(snowProgram, 'aSpeed');
+        const snowOffsetLocation = gl.getAttribLocation(snowProgram, 'aOffset');
+        const snowTimeLocation = gl.getUniformLocation(snowProgram, 'uTime');
+        const snowResolutionLocation = gl.getUniformLocation(snowProgram, 'uResolution');
+        const snowScaleLocation = gl.getUniformLocation(snowProgram, 'uScale');
+        const snowDepthLocation = gl.getUniformLocation(snowProgram, 'uDepth');
+        const snowSpeedMultiplierLocation = gl.getUniformLocation(snowProgram, 'uSpeedMultiplier');
+        const snowPlanetRadiusLocation = gl.getUniformLocation(snowProgram, 'uPlanetRadius');
+        
+        // Planet radius
+        const PLANET_RADIUS = 0.15;
+
+        // Create accumulated snow program
+        const accVertexShader = compileShader(gl, getShaderSource('accumulated-vertex-shader'), gl.VERTEX_SHADER);
+        const accFragmentShader = compileShader(gl, getShaderSource('accumulated-fragment-shader'), gl.FRAGMENT_SHADER);
+        const accProgram = createProgram(gl, accVertexShader, accFragmentShader);
+
+        const accPositionLocation = gl.getAttribLocation(accProgram, 'aPosition');
+        const accSizeLocation = gl.getAttribLocation(accProgram, 'aSize');
+        const accResolutionLocation = gl.getUniformLocation(accProgram, 'uResolution');
+        const accScaleLocation = gl.getUniformLocation(accProgram, 'uScale');
+
+        // Snow accumulation system - now radial around planet
+        const HEIGHTMAP_RESOLUTION = 360; // Number of angle buckets (degrees)
+        
+        // Each layer has its own heightmap (radial) and accumulated particles
+        const layers = [
+            { 
+                name: 'layer3',
+                startIdx: 0,
+                count: layer3Count,
+                speedMult: 0.3,
+                scale: 0.4,
+                growthRate: 0.3, // Slower growth for far layer
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0), // Radial height at each angle
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            },
+            { 
+                name: 'layer2',
+                startIdx: layer3Count,
+                count: layer2Count,
+                speedMult: 0.6,
+                scale: 0.7,
+                growthRate: 0.6, // Medium growth
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0),
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            },
+            { 
+                name: 'layer1',
+                startIdx: layer3Count + layer2Count,
+                count: layer1Count,
+                speedMult: 1.0,
+                scale: 1.0,
+                growthRate: 1.0, // Faster growth for near layer
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0),
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            }
+        ];
+
+        // Track which particles have already accumulated
+        const accumulatedParticles = new Set();
+
+        // Animation loop
+        let startTime = Date.now();
+
+        function getHeightmapIndex(angle) {
+            // Normalize angle to 0-2PI, then map to index
+            let normalizedAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            return Math.floor((normalizedAngle / (Math.PI * 2)) * HEIGHTMAP_RESOLUTION) % HEIGHTMAP_RESOLUTION;
+        }
+
+        function getHeightAtAngle(layer, angle) {
+            const idx = getHeightmapIndex(angle);
+            return layer.heightmap[idx];
+        }
+
+        function addSnowToHeightmap(layer, angle, amount) {
+            const idx = getHeightmapIndex(angle);
+            layer.heightmap[idx] += amount * layer.growthRate;
+        }
+
+        // Redistribute snow around the planet when too much accumulates
+        function redistributeSnow(layer) {
+            const MAX_HEIGHT_DIFFERENCE = 0.008; // Maximum allowed height difference between adjacent cells
+            const SPREAD_RATE = 0.3; // How much snow spreads to neighbors
+            
+            const newHeightmap = new Float32Array(layer.heightmap);
+            
+            for (let i = 0; i < HEIGHTMAP_RESOLUTION; i++) {
+                const currentHeight = layer.heightmap[i];
+                // Wrap around for circular planet
+                const leftIdx = (i - 1 + HEIGHTMAP_RESOLUTION) % HEIGHTMAP_RESOLUTION;
+                const rightIdx = (i + 1) % HEIGHTMAP_RESOLUTION;
+                const leftHeight = layer.heightmap[leftIdx];
+                const rightHeight = layer.heightmap[rightIdx];
+                
+                // Check if current cell is significantly higher than neighbors
+                const leftDiff = currentHeight - leftHeight;
+                const rightDiff = currentHeight - rightHeight;
+                
+                if (leftDiff > MAX_HEIGHT_DIFFERENCE) {
+                    // Spread to left
+                    const spreadAmount = (leftDiff - MAX_HEIGHT_DIFFERENCE) * SPREAD_RATE;
+                    newHeightmap[i] -= spreadAmount;
+                    newHeightmap[leftIdx] += spreadAmount;
+                }
+                
+                if (rightDiff > MAX_HEIGHT_DIFFERENCE) {
+                    // Spread to right
+                    const spreadAmount = (rightDiff - MAX_HEIGHT_DIFFERENCE) * SPREAD_RATE;
+                    newHeightmap[i] -= spreadAmount;
+                    newHeightmap[rightIdx] += spreadAmount;
+                }
+            }
+            
+            layer.heightmap.set(newHeightmap);
+        }
+
+        function checkAndAccumulateSnow(currentTime) {
+            layers.forEach(layer => {
+                // Check a subset of particles each frame for performance
+                const particlesToCheck = Math.min(500, layer.count);
+                
+                for (let i = 0; i < particlesToCheck; i++) {
+                    const randomIdx = layer.startIdx + Math.floor(Math.random() * layer.count);
+                    const particleKey = `${layer.name}_${randomIdx}`;
+                    
+                    // Skip if already accumulated
+                    if (accumulatedParticles.has(particleKey)) continue;
+                    
+                    // Get particle data
+                    const angleNorm = snowPositions[randomIdx * 3]; // 0-1
+                    const speed = snowSpeeds[randomIdx];
+                    const offset = snowOffsets[randomIdx];
+                    const size = snowSizes[randomIdx];
+                    
+                    // Calculate angle with drift
+                    const baseAngle = angleNorm * Math.PI * 2;
+                    const drift = Math.sin(currentTime * 0.3 + offset * 10.0) * 0.1;
+                    const angle = baseAngle + drift;
+                    
+                    // Calculate current radius (falling inward)
+                    const maxRadius = 1.5;
+                    const fallProgress = (currentTime * speed * layer.speedMult * 0.3 + offset) % 1.0;
+                    const radius = maxRadius * (1.0 - fallProgress) + PLANET_RADIUS * fallProgress;
+                    
+                    // Get current snow height at this angle
+                    const currentHeight = getHeightAtAngle(layer, angle);
+                    const landingRadius = PLANET_RADIUS + currentHeight;
+                    
+                    // If particle reached the landing radius
+                    if (radius <= landingRadius + 0.01) {
+                        // Add multiple particles around the landing position for better coverage
+                        const spreadCount = 3;
+                        for (let s = 0; s < spreadCount; s++) {
+                            const spreadAngle = angle + (Math.random() - 0.5) * 0.03;
+                            const spreadRadius = landingRadius + (Math.random() - 0.5) * 0.005;
+                            // Store as angle, radius for the shader
+                            layer.accumulated.positions.push(spreadAngle, spreadRadius);
+                            layer.accumulated.sizes.push(size * 2.0);
+                            layer.accumulated.count++;
+                        }
+                        
+                        // Update heightmap
+                        const particleHeightContribution = size * 0.00008;
+                        addSnowToHeightmap(layer, angle, particleHeightContribution);
+                        
+                        // Mark as accumulated
+                        accumulatedParticles.add(particleKey);
+                        
+                        // Update buffers every 10 particles for performance
+                        if (layer.accumulated.count % 10 === 0) {
+                            if (!layer.accumulated.buffer) {
+                                layer.accumulated.buffer = gl.createBuffer();
+                                layer.accumulated.sizeBuffer = gl.createBuffer();
+                            }
+                            
+                            gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.buffer);
+                            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(layer.accumulated.positions), gl.STATIC_DRAW);
+                            
+                            gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.sizeBuffer);
+                            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(layer.accumulated.sizes), gl.STATIC_DRAW);
+                        }
+                    }
+                }
+            });
+        }
+
+        function render() {
+            const currentTime = (Date.now() - startTime) / 1000.0;
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            // Render background
+            gl.useProgram(bgProgram);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, bgBuffer);
+            gl.enableVertexAttribArray(bgPositionLocation);
+            gl.vertexAttribPointer(bgPositionLocation, 2, gl.FLOAT, false, 0, 0);
+            
+            gl.uniform1f(bgTimeLocation, currentTime);
+            gl.uniform2f(bgResolutionLocation, canvas.width, canvas.height);
+            gl.uniform1f(bgPlanetRadiusLocation, PLANET_RADIUS);
+            
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            // Render snow in three parallax layers
+            gl.useProgram(snowProgram);
+            
+            // Enable blending for transparent snow
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            // Set up attributes (same for all layers)
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowPositionBuffer);
+            gl.enableVertexAttribArray(snowPositionLocation);
+            gl.vertexAttribPointer(snowPositionLocation, 3, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowSizeBuffer);
+            gl.enableVertexAttribArray(snowSizeLocation);
+            gl.vertexAttribPointer(snowSizeLocation, 1, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowSpeedBuffer);
+            gl.enableVertexAttribArray(snowSpeedLocation);
+            gl.vertexAttribPointer(snowSpeedLocation, 1, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, snowOffsetBuffer);
+            gl.enableVertexAttribArray(snowOffsetLocation);
+            gl.vertexAttribPointer(snowOffsetLocation, 1, gl.FLOAT, false, 0, 0);
+            
+            gl.uniform1f(snowTimeLocation, currentTime);
+            gl.uniform2f(snowResolutionLocation, canvas.width, canvas.height);
+            gl.uniform1f(snowPlanetRadiusLocation, PLANET_RADIUS);
+            
+            // Layer 3 (furthest back - smallest, slowest, most transparent, most particles)
+            gl.uniform1f(snowScaleLocation, 0.4);
+            gl.uniform1f(snowDepthLocation, 0.3);
+            gl.uniform1f(snowSpeedMultiplierLocation, 0.3); // 30% speed
+            gl.drawArrays(gl.POINTS, 0, layer3Count);
+            
+            // Layer 2 (middle - medium size and speed)
+            gl.uniform1f(snowScaleLocation, 0.7);
+            gl.uniform1f(snowDepthLocation, 0.6);
+            gl.uniform1f(snowSpeedMultiplierLocation, 0.6); // 60% speed
+            gl.drawArrays(gl.POINTS, layer3Count, layer2Count);
+            
+            // Layer 1 (front - original size and full opacity and speed)
+            gl.uniform1f(snowScaleLocation, 1.0);
+            gl.uniform1f(snowDepthLocation, 1.0);
+            gl.uniform1f(snowSpeedMultiplierLocation, 1.0); // 100% speed
+            gl.drawArrays(gl.POINTS, layer3Count + layer2Count, layer1Count);
+            
+            gl.disable(gl.BLEND);
+
+            // Check and accumulate snow
+            checkAndAccumulateSnow(currentTime);
+
+            // Redistribute snow every frame to create natural spreading
+            layers.forEach(layer => redistributeSnow(layer));
+
+            // Render accumulated snow
+            gl.useProgram(accProgram);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            gl.uniform2f(accResolutionLocation, canvas.width, canvas.height);
+
+            // Render each layer's accumulated snow
+            layers.forEach(layer => {
+                if (layer.accumulated.count > 0 && layer.accumulated.buffer) {
+                    gl.uniform1f(accScaleLocation, layer.scale);
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.buffer);
+                    gl.enableVertexAttribArray(accPositionLocation);
+                    gl.vertexAttribPointer(accPositionLocation, 2, gl.FLOAT, false, 0, 0);
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.sizeBuffer);
+                    gl.enableVertexAttribArray(accSizeLocation);
+                    gl.vertexAttribPointer(accSizeLocation, 1, gl.FLOAT, false, 0, 0);
+                    
+                    gl.drawArrays(gl.POINTS, 0, layer.accumulated.count);
+                }
+            });
+            
+            gl.disable(gl.BLEND);
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+
+</body></html>
