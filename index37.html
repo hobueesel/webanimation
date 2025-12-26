@@ -161,8 +161,8 @@
             vec3 spaceColor = vec3(0.0, 0.0, 0.05);
             
             // Radial glow around planet
-            vec3 glowColor = vec3(1.0, 0.4, 0.2); // Sunset orange glow
-            vec3 midGlow = vec3(0.1, 0.05, 0.2); // Deep purple
+            vec3 glowColor = vec3(0.2, 0.5, 1.0); // Electric blue glow
+            vec3 midGlow = vec3(0.05, 0.1, 0.3); // Deep blue
             
             // Create radial gradient from planet outward
             float glowStart = uPlanetRadius;
@@ -179,8 +179,8 @@
             
             // Planet itself (dark core)
             if(dist < uPlanetRadius) {
-                vec3 planetColor = vec3(0.05, 0.03, 0.08);
-                vec3 planetHighlight = vec3(0.15, 0.08, 0.05);
+                vec3 planetColor = vec3(0.02, 0.03, 0.08);
+                vec3 planetHighlight = vec3(0.05, 0.1, 0.2);
                 float edgeGlow = smoothstep(uPlanetRadius - 0.02, uPlanetRadius, dist);
                 color = mix(planetColor, planetHighlight, edgeGlow);
             }
