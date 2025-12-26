@@ -363,6 +363,40 @@
             }
         }
 
+        // Redistribute snow to sides when too much accumulates vertically
+        function redistributeSnow(layer) {
+            const MAX_HEIGHT_DIFFERENCE = 0.015; // Maximum allowed height difference between adjacent cells
+            const SPREAD_RATE = 0.3; // How much snow spreads to neighbors
+            
+            const newHeightmap = new Float32Array(layer.heightmap);
+            
+            for (let i = 1; i < HEIGHTMAP_RESOLUTION - 1; i++) {
+                const currentHeight = layer.heightmap[i];
+                const leftHeight = layer.heightmap[i - 1];
+                const rightHeight = layer.heightmap[i + 1];
+                
+                // Check if current cell is significantly higher than neighbors
+                const leftDiff = currentHeight - leftHeight;
+                const rightDiff = currentHeight - rightHeight;
+                
+                if (leftDiff > MAX_HEIGHT_DIFFERENCE) {
+                    // Spread to left
+                    const spreadAmount = (leftDiff - MAX_HEIGHT_DIFFERENCE) * SPREAD_RATE;
+                    newHeightmap[i] -= spreadAmount;
+                    newHeightmap[i - 1] += spreadAmount;
+                }
+                
+                if (rightDiff > MAX_HEIGHT_DIFFERENCE) {
+                    // Spread to right
+                    const spreadAmount = (rightDiff - MAX_HEIGHT_DIFFERENCE) * SPREAD_RATE;
+                    newHeightmap[i] -= spreadAmount;
+                    newHeightmap[i + 1] += spreadAmount;
+                }
+            }
+            
+            layer.heightmap.set(newHeightmap);
+        }
+
         function checkAndAccumulateSnow(currentTime) {
             layers.forEach(layer => {
                 // Check a subset of particles each frame for performance
@@ -409,7 +443,7 @@
                             }
                             
                             // Update heightmap
-                            const particleHeightContribution = size * 0.0015; // Increment per particle
+                            const particleHeightContribution = size * 0.00015; // Increment per particle (10x slower)
                             addSnowToHeightmap(layer, actualX, particleHeightContribution);
                             
                             // Mark as accumulated
@@ -500,6 +534,9 @@
 
             // Check and accumulate snow
             checkAndAccumulateSnow(currentTime);
+
+            // Redistribute snow every frame to create natural spreading
+            layers.forEach(layer => redistributeSnow(layer));
 
             // Render accumulated snow
             gl.useProgram(accProgram);
