@@ -72,6 +72,37 @@
         }
     </script>
 
+    <!-- Vertex Shader for Accumulated Snow -->
+    <script id="accumulated-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 aPosition;
+        attribute float aSize;
+        
+        uniform vec2 uResolution;
+        uniform float uScale;
+        
+        void main() {
+            gl_Position = vec4(aPosition.x * 2.0 - 1.0, aPosition.y * 2.0 - 1.0, 0.0, 1.0);
+            gl_PointSize = aSize * (uResolution.y / 800.0) * uScale;
+        }
+    </script>
+
+    <!-- Fragment Shader for Accumulated Snow -->
+    <script id="accumulated-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        void main() {
+            vec2 coord = gl_PointCoord - vec2(0.5);
+            float dist = length(coord);
+            
+            if(dist > 0.5) {
+                discard;
+            }
+            
+            float alpha = 1.0 - dist * 2.0;
+            gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+        }
+    </script>
+
     <!-- Vertex Shader for Background -->
     <script id="bg-vertex-shader" type="x-shader/x-vertex">
         attribute vec2 aPosition;
@@ -261,8 +292,147 @@
         const snowDepthLocation = gl.getUniformLocation(snowProgram, 'uDepth');
         const snowSpeedMultiplierLocation = gl.getUniformLocation(snowProgram, 'uSpeedMultiplier');
 
+        // Create accumulated snow program
+        const accVertexShader = compileShader(gl, getShaderSource('accumulated-vertex-shader'), gl.VERTEX_SHADER);
+        const accFragmentShader = compileShader(gl, getShaderSource('accumulated-fragment-shader'), gl.FRAGMENT_SHADER);
+        const accProgram = createProgram(gl, accVertexShader, accFragmentShader);
+
+        const accPositionLocation = gl.getAttribLocation(accProgram, 'aPosition');
+        const accSizeLocation = gl.getAttribLocation(accProgram, 'aSize');
+        const accResolutionLocation = gl.getUniformLocation(accProgram, 'uResolution');
+        const accScaleLocation = gl.getUniformLocation(accProgram, 'uScale');
+
+        // Snow accumulation system
+        const ACCUMULATION_ZONE = 0.33; // Lower 1/3 of screen
+        const HEIGHTMAP_RESOLUTION = 200; // Number of X buckets for height tracking
+        
+        // Each layer has its own heightmap and accumulated particles
+        const layers = [
+            { 
+                name: 'layer3',
+                startIdx: 0,
+                count: layer3Count,
+                speedMult: 0.3,
+                scale: 0.4,
+                growthRate: 0.3, // Slower growth for far layer
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0),
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            },
+            { 
+                name: 'layer2',
+                startIdx: layer3Count,
+                count: layer2Count,
+                speedMult: 0.6,
+                scale: 0.7,
+                growthRate: 0.6, // Medium growth
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0),
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            },
+            { 
+                name: 'layer1',
+                startIdx: layer3Count + layer2Count,
+                count: layer1Count,
+                speedMult: 1.0,
+                scale: 1.0,
+                growthRate: 1.0, // Faster growth for near layer
+                heightmap: new Float32Array(HEIGHTMAP_RESOLUTION).fill(0),
+                accumulated: { positions: [], sizes: [], count: 0, buffer: null, sizeBuffer: null }
+            }
+        ];
+
+        // Track which particles have already accumulated
+        const accumulatedParticles = new Set();
+
         // Animation loop
         let startTime = Date.now();
+
+        function getHeightmapIndex(x) {
+            return Math.floor(x * HEIGHTMAP_RESOLUTION);
+        }
+
+        function getHeightAtPosition(layer, x) {
+            const idx = getHeightmapIndex(x);
+            if (idx < 0 || idx >= HEIGHTMAP_RESOLUTION) return 0;
+            return layer.heightmap[idx];
+        }
+
+        function addSnowToHeightmap(layer, x, amount) {
+            const idx = getHeightmapIndex(x);
+            if (idx >= 0 && idx < HEIGHTMAP_RESOLUTION) {
+                layer.heightmap[idx] += amount * layer.growthRate;
+            }
+        }
+
+        function checkAndAccumulateSnow(currentTime) {
+            layers.forEach(layer => {
+                // Check a subset of particles each frame for performance
+                const particlesToCheck = Math.min(500, layer.count);
+                
+                for (let i = 0; i < particlesToCheck; i++) {
+                    const randomIdx = layer.startIdx + Math.floor(Math.random() * layer.count);
+                    const particleKey = `${layer.name}_${randomIdx}`;
+                    
+                    // Skip if already accumulated
+                    if (accumulatedParticles.has(particleKey)) continue;
+                    
+                    // Get particle position
+                    const x = snowPositions[randomIdx * 3];
+                    const speed = snowSpeeds[randomIdx];
+                    const offset = snowOffsets[randomIdx];
+                    const size = snowSizes[randomIdx];
+                    
+                    // Calculate current Y position
+                    const fallProgress = (currentTime * speed * layer.speedMult + offset) % 2.0;
+                    const y = 1.0 - fallProgress;
+                    
+                    // Calculate X position with drift
+                    const drift = Math.sin(currentTime * 0.5 + offset * 10.0) * 0.05;
+                    const actualX = x + drift;
+                    
+                    // Check if in accumulation zone
+                    if (y <= ACCUMULATION_ZONE) {
+                        // Get current height at this X position
+                        const currentHeight = getHeightAtPosition(layer, actualX);
+                        const groundY = 0; // Ground is at bottom (y=0)
+                        const landingY = groundY + currentHeight; // Snow grows upwards
+                        
+                        // If particle reached the landing height
+                        if (y <= landingY + 0.01) { // Small buffer for detection
+                            // Add multiple particles around the landing position for better coverage
+                            const spreadCount = 3; // Add 3 particles per landing
+                            for (let s = 0; s < spreadCount; s++) {
+                                const spreadX = actualX + (Math.random() - 0.5) * 0.01; // Small horizontal spread
+                                const spreadY = landingY + (Math.random() - 0.5) * 0.005; // Small vertical spread
+                                layer.accumulated.positions.push(spreadX, spreadY);
+                                layer.accumulated.sizes.push(size * 2.5); // Increase size significantly for full coverage
+                                layer.accumulated.count++;
+                            }
+                            
+                            // Update heightmap
+                            const particleHeightContribution = size * 0.0015; // Increment per particle
+                            addSnowToHeightmap(layer, actualX, particleHeightContribution);
+                            
+                            // Mark as accumulated
+                            accumulatedParticles.add(particleKey);
+                            
+                            // Update buffers every 10 particles for performance
+                            if (layer.accumulated.count % 10 === 0) {
+                                if (!layer.accumulated.buffer) {
+                                    layer.accumulated.buffer = gl.createBuffer();
+                                    layer.accumulated.sizeBuffer = gl.createBuffer();
+                                }
+                                
+                                gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.buffer);
+                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(layer.accumulated.positions), gl.STATIC_DRAW);
+                                
+                                gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.sizeBuffer);
+                                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(layer.accumulated.sizes), gl.STATIC_DRAW);
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         function render() {
             const currentTime = (Date.now() - startTime) / 1000.0;
@@ -325,6 +495,35 @@
             gl.uniform1f(snowDepthLocation, 1.0);
             gl.uniform1f(snowSpeedMultiplierLocation, 1.0); // 100% speed
             gl.drawArrays(gl.POINTS, layer3Count + layer2Count, layer1Count);
+            
+            gl.disable(gl.BLEND);
+
+            // Check and accumulate snow
+            checkAndAccumulateSnow(currentTime);
+
+            // Render accumulated snow
+            gl.useProgram(accProgram);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            gl.uniform2f(accResolutionLocation, canvas.width, canvas.height);
+
+            // Render each layer's accumulated snow
+            layers.forEach(layer => {
+                if (layer.accumulated.count > 0 && layer.accumulated.buffer) {
+                    gl.uniform1f(accScaleLocation, layer.scale);
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.buffer);
+                    gl.enableVertexAttribArray(accPositionLocation);
+                    gl.vertexAttribPointer(accPositionLocation, 2, gl.FLOAT, false, 0, 0);
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, layer.accumulated.sizeBuffer);
+                    gl.enableVertexAttribArray(accSizeLocation);
+                    gl.vertexAttribPointer(accSizeLocation, 1, gl.FLOAT, false, 0, 0);
+                    
+                    gl.drawArrays(gl.POINTS, 0, layer.accumulated.count);
+                }
+            });
             
             gl.disable(gl.BLEND);
 
