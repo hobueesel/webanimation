@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fast Solar System Demo</title>
+<style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;}
+    canvas{display:block;width:100%;height:100%;}
+</style>
+</head>
+<body>
+<canvas id="space"></canvas>
+
+<script>
+/* --------------------------------------------------------------
+   BASIC SETUP
+   -------------------------------------------------------------- */
+const canvas = document.getElementById('space');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* --------------------------------------------------------------
+   PLANET DEFINITIONS
+   -------------------------------------------------------------- */
+const PLANET_COUNT = 8;
+const planets = [];
+
+const baseOrbit = 120;               // base distance from centre (px)
+const orbitSpread = 80;              // variation around base orbit
+const planetSizeScale = 12;          // radius multiplier (px)
+
+for (let i = 0; i < PLANET_COUNT; i++) {
+    // Random but deterministic “type” (size, colour, speed)
+    const sizeFactor = 0.5 + Math.random()*0.8;          // 0.5‑1.3
+    const orbitRadius = baseOrbit + (i%3 - 1) * orbitSpread; // stagger
+    const orbitSpeed  = 0.005 + i*0.001;                 // slower for outer
+    const colour = `hsl(${(i*40)%360},70%,${50+30*Math.random()}%)`;
+
+    planets.push({
+        radius: 12 + i*3,                     // visual radius (px)
+        orbitRadius: orbitRadius,
+        orbitSpeed: orbitSpeed,
+        colour: colour,
+        angle: Math.random()*Math.PI*2
+    });
+}
+
+/* --------------------------------------------------------------
+   COMET FACTORY
+   -------------------------------------------------------------- */
+let cometCounter = 0;
+const MAX_COMETS = 10;                     // total comets to spawn
+const comets = [];
+
+function spawnComet() {
+    if (cometCounter >= MAX_COMETS) return;   // stop after 10
+
+    // Pick a random planet to swing by
+    const planet = planets[Math.floor(Math.random()*planets.length)];
+    const startAngle = planet.angle + Math.random()*Math.PI*0.5 - Math.PI*0.25;
+    const travelTime = 3000 + Math.random()*4000; // ms
+
+    // The comet will start near the planet, swing outwards and disappear
+    const comet = {
+        planet,
+        startAngle,
+        travelTime,
+        progress: 0,               // 0‑1
+        life: travelTime,
+        // We'll use a simple Bezier curve that arcs away then back in
+        // (control point far away to look like a slingshot)
+        ctrlAngle: startAngle + Math.PI + Math.random()*Math.PI*0.4 - Math.PI*0.2,
+        // radius will vary between planet.orbitRadius and planet.orbitRadius*1.8
+        startRadius: planet.orbitRadius,
+        endRadius: planet.orbitRadius*1.8
+    };
+    comets.push(comet);
+}
+
+/* --------------------------------------------------------------
+   ANIMATION LOOP
+   -------------------------------------------------------------- */
+let lastTime = 0;
+function animate(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+
+    // Clear background (draw a few tiny stars for depth)
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    drawStars();
+
+    // ---- Update planets -------------------------------------------------
+    planets.forEach(p => {
+        p.angle = (p.angle + p.orbitSpeed*dt) % (Math.PI*2);
+    });
+
+    // ---- Update comets --------------------------------------------------
+    comets.forEach(c => {
+        c.progress += dt / c.travelTime;
+        if (c.progress >= 1) {
+            // comet finished its flight – remove it
+            const idx = comets.indexOf(c);
+            comets.splice(idx,1);
+            cometCounter++;
+            return;
+        }
+        // Ease‑in‑out progress for smoother motion
+        const e = easeInOutCubic(c.progress);
+        // radius interpolation
+        const r = c.startRadius + (c.endRadius - c.startRadius)*e;
+        // angular interpolation (planet + comet arc)
+        const a = c.startAngle + (c.ctrlAngle - c.startAngle)*e;
+        // Convert polar → cartesian
+        const x = canvas.width/2 + r*Math.cos(a);
+        const y = canvas.height/2 + r*Math.sin(a);
+        // Draw comet tail (fades)
+        const alpha = 1 - c.progress;
+        ctx.strokeStyle = `rgba(255,255,180,${alpha*0.6})`;
+        ctx.lineWidth = 2;
+        // small line for “tail”
+        const tailLen = 15;
+        const tx = canvas.width/2 + (r-tailLen*0.5)*Math.cos(a);
+        const ty = canvas.height/2 + (r-tailLen*0.5)*Math.sin(a);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+
+        // Draw comet body (bright core)
+        ctx.fillStyle = 'rgba(255,255,180,0.9)';
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // ---- Draw planets ----------------------------------------------------
+    planets.forEach(p => {
+        const x = canvas.width/2 + p.orbitRadius*Math.cos(p.angle);
+        const y = canvas.height/2 + p.orbitRadius*Math.sin(p.angle);
+        // Simple glow effect
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, p.radius*2.5);
+        grad.addColorStop(0, "rgba(255,255,255,0.6)");
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, p.radius*2.5, 0, Math.PI*2);
+        ctx.fill();
+
+        // Planet colour
+        ctx.fillStyle = p.colour;
+        ctx.beginPath();
+        ctx.arc(x, y, p.radius, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+/* --------------------------------------------------------------
+   UTILITIES
+   -------------------------------------------------------------- */
+function easeInOutCubic(t){
+    return t<.5 ? 4*t*t : 4-8*t+4*t*t;
+}
+function drawStars(){
+    const count = 30;
+    for (let i=0;i<count;i++){
+        const x = Math.random()*canvas.width;
+        const y = Math.random()*canvas.height;
+        const r = Math.random()*0.8+0.5;
+        const col = `rgba(255,255,255,${Math.random()*0.6+0.3})`;
+        ctx.fillStyle = col;
+        ctx.fillRect(x-r, y-r, r*2, r*2);
+    }
+}
+
+/* --------------------------------------------------------------
+   INITIAL COMET SPAWNING
+   -------------------------------------------------------------- */
+setInterval(spawnComet, 800 + Math.random()*1200); // random interval
+</script>
+</body>
+</html>
